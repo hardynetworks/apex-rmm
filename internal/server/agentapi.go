@@ -226,7 +226,7 @@ func (s *Server) agentBinary(goos, arch string) (*binInfo, error) {
 	if goos == "windows" {
 		name += ".exe"
 	}
-	p := filepath.Join(s.cfg.AgentDir, name)
+	p := filepath.Join(s.conf().AgentDir, name)
 	st, err := os.Stat(p)
 	if err != nil {
 		return nil, ErrNotFound
@@ -276,7 +276,7 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "no binary")
 		return
 	}
-	writeJSON(w, 200, map[string]string{"sha256": bi.sha, "url": s.cfg.PublicURL + "/download/agent/" + r.URL.Query().Get("os") + "/" + r.URL.Query().Get("arch")})
+	writeJSON(w, 200, map[string]string{"sha256": bi.sha, "url": s.conf().PublicURL + "/download/agent/" + r.URL.Query().Get("os") + "/" + r.URL.Query().Get("arch")})
 }
 
 var installTemplates = map[string]*template.Template{
@@ -355,5 +355,5 @@ func (s *Server) handleInstaller(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = tpl.Execute(w, map[string]string{"URL": s.cfg.PublicURL, "Token": token})
+	_ = tpl.Execute(w, map[string]string{"URL": s.conf().PublicURL, "Token": token})
 }

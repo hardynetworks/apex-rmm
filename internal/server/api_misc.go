@@ -172,7 +172,7 @@ func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) installURLs(token string) map[string]string {
-	base := s.cfg.PublicURL + "/install/" + token
+	base := s.conf().PublicURL + "/install/" + token
 	return map[string]string{
 		"windows": `irm ` + base + `/windows.ps1 | iex`,
 		"linux":   `curl -fsSL ` + base + `/linux.sh | sudo sh`,
@@ -281,17 +281,17 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"settings": s.settings(r),
 		"server": map[string]any{
-			"public_url":      s.cfg.PublicURL,
-			"sso_enabled":     s.cfg.OIDCEnabled(),
-			"oidc_issuer":     s.cfg.OIDCIssuer,
-			"admin_groups":    nz(s.cfg.OIDCAdminGroups),
-			"tech_groups":     nz(s.cfg.OIDCTechGroups),
-			"viewer_groups":   nz(s.cfg.OIDCViewerGroups),
-			"default_role":    s.cfg.OIDCDefaultRole,
-			"rustdesk_host":   s.cfg.RustDeskHost,
-			"rustdesk_key":    s.cfg.RustDeskPublicKey(),
-			"metrics_days":    s.cfg.MetricsRetentionDays,
-			"local_admin":     s.cfg.LocalAdminPassword != "",
+			"public_url":    s.conf().PublicURL,
+			"sso_enabled":   s.conf().OIDCEnabled(),
+			"oidc_issuer":   s.conf().OIDCIssuer,
+			"admin_groups":  nz(s.conf().OIDCAdminGroups),
+			"tech_groups":   nz(s.conf().OIDCTechGroups),
+			"viewer_groups": nz(s.conf().OIDCViewerGroups),
+			"default_role":  s.conf().OIDCDefaultRole,
+			"rustdesk_host": s.conf().RustDeskHost,
+			"rustdesk_key":  s.conf().RustDeskPublicKey(),
+			"metrics_days":  s.conf().MetricsRetentionDays,
+			"local_admin":   s.conf().LocalAdminPassword != "",
 		},
 	})
 }

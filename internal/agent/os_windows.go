@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	hwOnce                    sync.Once
+	hwOnce                   sync.Once
 	hwMfr, hwModel, hwSerial string
 )
 

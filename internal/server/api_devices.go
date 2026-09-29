@@ -262,7 +262,7 @@ func (s *Server) deviceUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		fail(w, badRequest("no agent build for "+goos+"/"+arch))
 		return
 	}
-	payload := proto.UpdateAgent{URL: s.cfg.PublicURL + "/download/agent/" + goos + "/" + arch, SHA256: bi.sha}
+	payload := proto.UpdateAgent{URL: s.conf().PublicURL + "/download/agent/" + goos + "/" + arch, SHA256: bi.sha}
 	if _, ok := s.agentCall(w, r, proto.TypeUpdateAgent, payload, 120*time.Second); ok {
 		s.audit(r.Context(), userFrom(r), r, "device.agent_update", "device", id, nil)
 		writeJSON(w, 200, map[string]bool{"ok": true})
@@ -340,11 +340,11 @@ func rustDeskConfigString(host, relay, key string) string {
 
 func (s *Server) provisionRustDesk(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if s.cfg.RustDeskHost == "" {
+	if s.conf().RustDeskHost == "" {
 		fail(w, badRequest("RustDesk is not configured on the server (set RUSTDESK_HOST)"))
 		return
 	}
-	key := s.cfg.RustDeskPublicKey()
+	key := s.conf().RustDeskPublicKey()
 	if key == "" {
 		fail(w, badRequest("RustDesk server key not found (set RUSTDESK_KEY or mount hbbs data at RUSTDESK_KEY_FILE)"))
 		return
@@ -354,8 +354,8 @@ func (s *Server) provisionRustDesk(w http.ResponseWriter, r *http.Request) {
 	if pw == "" {
 		pw = randPassword(16)
 	}
-	p := proto.RustDeskProvision{IDServer: s.cfg.RustDeskHost, RelayServer: s.cfg.RustDeskRelay, Key: key, Password: pw,
-		ConfigB64: rustDeskConfigString(s.cfg.RustDeskHost, s.cfg.RustDeskRelay, key)}
+	p := proto.RustDeskProvision{IDServer: s.conf().RustDeskHost, RelayServer: s.conf().RustDeskRelay, Key: key, Password: pw,
+		ConfigB64: rustDeskConfigString(s.conf().RustDeskHost, s.conf().RustDeskRelay, key)}
 	raw, ok := s.agentCall(w, r, proto.TypeRustDesk, p, 10*time.Minute)
 	if !ok {
 		return
@@ -375,7 +375,7 @@ func (s *Server) getRustDesk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r.Context(), userFrom(r), r, "device.rustdesk_credentials_viewed", "device", id, nil)
-	writeJSON(w, 200, map[string]any{"id": rid, "password": pw, "server": s.cfg.RustDeskHost, "key": s.cfg.RustDeskPublicKey(),
+	writeJSON(w, 200, map[string]any{"id": rid, "password": pw, "server": s.conf().RustDeskHost, "key": s.conf().RustDeskPublicKey(),
 		"uri": func() string {
 			if rid == "" {
 				return ""

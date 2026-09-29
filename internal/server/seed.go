@@ -7,8 +7,8 @@ import (
 
 type seedScript struct {
 	name, desc, cat, shell string
-	platforms             []string
-	body                  string
+	platforms              []string
+	body                   string
 }
 
 var defaultScripts = []seedScript{
@@ -45,7 +45,7 @@ func (s *Server) seed(ctx context.Context) {
 	var n int
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM clients`).Scan(&n); err == nil && n == 0 {
 		var id string
-		if err := s.db.QueryRow(ctx, `INSERT INTO clients (name) VALUES ($1) RETURNING id`, s.cfg.CompanyName).Scan(&id); err == nil {
+		if err := s.db.QueryRow(ctx, `INSERT INTO clients (name) VALUES ($1) RETURNING id`, s.conf().CompanyName).Scan(&id); err == nil {
 			_, _ = s.db.Exec(ctx, `INSERT INTO sites (client_id, name) VALUES ($1, 'Main')`, id)
 		}
 	}

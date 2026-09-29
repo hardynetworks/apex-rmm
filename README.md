@@ -49,35 +49,46 @@ A self-hosted Remote Monitoring & Management platform that runs in Docker, signs
 
 | Record | Points to | Notes |
 |---|---|---|
-| `remote.hardyvpn.online` | your Docker host | Can be Cloudflare-proxied (WebSockets work) |
-| `rustdesk.hardyvpn.online` | your Docker host | **DNS only** (grey cloud) – RustDesk uses raw TCP/UDP |
+| `rmm.example.com` | your Docker host | Can be Cloudflare-proxied (WebSockets work) |
+| `rustdesk.example.com` | your Docker host | **DNS only** (grey cloud) – RustDesk uses raw TCP/UDP |
 
 Open/forward TCP **21115-21119** and UDP **21116** to the host for RustDesk.
 
-### 2. Authentik
-
-Follow [docs/AUTHENTIK.md](docs/AUTHENTIK.md) (5 minutes). You'll end up with an issuer URL, client ID and client secret, plus the groups `RMM Admins` and `RMM Technicians`.
-
-### 3. Configure & start
+### 2. Start it
 
 ```bash
-git clone <this repo> hardy-rmm && cd hardy-rmm
-cp .env.example .env
-nano .env          # PUBLIC_URL, POSTGRES_PASSWORD, OIDC_*, RUSTDESK_HOST
+git clone https://github.com/hardynetworks/hardy-rmm.git && cd hardy-rmm
 docker compose up -d --build
 ```
 
-The first build cross-compiles the agent for all 7 platforms, so it takes a few minutes.
+No config file is needed. The first build cross-compiles the agent for all 7 platforms, so it takes a few minutes. A random database password and encryption key are generated automatically on first start.
 
-### 4. Reverse proxy
+### 3. Run the setup wizard
 
-The app listens on `127.0.0.1:8080`. Put your existing proxy in front of it — **WebSocket upgrades must be allowed** (`/api/agent/ws`, `/api/agent/desktop`, `/api/ws/*`).
+Open `http://<your-server>:8080`. The wizard asks for a **setup code** (proof that you own the server), which is printed in the log:
+
+```bash
+docker compose logs hardy | grep "setup code"
+```
+
+It then asks for your company name and public URL and creates your first admin account (a local login that keeps working even if SSO is down).
+
+### 4. Finish in Settings → General
+
+Everything else is set in the dashboard, and changes apply immediately without a restart:
+
+* **Server:** public URL and company name.
+* **Single sign-on:** Authentik issuer URL, client ID and secret, and which Authentik groups map to admin, technician and viewer. There's a **Test** button for the issuer, and the redirect URI to paste into Authentik is shown for you. See [docs/AUTHENTIK.md](docs/AUTHENTIK.md).
+* **RustDesk:** the host devices use to reach the bundled RustDesk server. The server key is detected automatically.
+* **Notifications:** Discord, Slack, ntfy or generic webhook.
+
+**Reverse proxy:** the dashboard is published on port 8080. Put your existing proxy in front of it; **WebSocket upgrades must be allowed** (`/api/agent/ws`, `/api/agent/desktop`, `/api/ws/*`).
 
 * **Nginx Proxy Manager:** new proxy host → `http://<host>:8080`, enable *Websockets Support*, request an SSL cert.
 * **Traefik:** a normal HTTP router works; Traefik proxies WebSockets automatically.
-* **No proxy yet?** `docker compose --profile caddy up -d` runs Caddy with automatic Let's Encrypt for `HARDY_DOMAIN`.
+* **No proxy yet?** `docker compose --profile caddy up -d` runs Caddy with automatic Let's Encrypt for `HARDY_DOMAIN` (set it in `.env`).
 
-Then open `https://remote.hardyvpn.online` and click **Sign in with Authentik**.
+Once HTTPS works, update **Public URL** in Settings to the `https://` address before deploying agents.
 
 ### 5. Add devices
 
@@ -85,18 +96,18 @@ Then open `https://remote.hardyvpn.online` and click **Sign in with Authentik**.
 
 ```powershell
 # Windows (elevated PowerShell)
-irm https://remote.hardyvpn.online/install/<token>/windows.ps1 | iex
+irm https://rmm.example.com/install/<token>/windows.ps1 | iex
 ```
 ```bash
 # macOS
-curl -fsSL https://remote.hardyvpn.online/install/<token>/macos.sh | sudo sh
+curl -fsSL https://rmm.example.com/install/<token>/macos.sh | sudo sh
 # Linux
-curl -fsSL https://remote.hardyvpn.online/install/<token>/linux.sh | sudo sh
+curl -fsSL https://rmm.example.com/install/<token>/linux.sh | sudo sh
 ```
 
 The agent installs as a service (`Hardy RMM Agent` on Windows, systemd/SysV/OpenRC on Linux, a LaunchDaemon on macOS) and appears on the dashboard within seconds.
 
-Manual install: download `/download/agent/<os>/<arch>` and run `hardy-agent install --server https://remote.hardyvpn.online --token <token>`. Uninstall with `hardy-agent uninstall`, or delete the device in the dashboard (the agent removes itself).
+Manual install: download `/download/agent/<os>/<arch>` and run `hardy-agent install --server https://rmm.example.com --token <token>`. Uninstall with `hardy-agent uninstall`, or delete the device in the dashboard (the agent removes itself).
 
 ## Remote control
 
@@ -124,30 +135,27 @@ Roles are synced from Authentik groups at every sign-in (see `OIDC_*_GROUPS`).
 | **technician** | + remote control, terminal, run scripts, manage processes/services, reboot, edit scripts & schedules, work tickets, acknowledge alerts |
 | **admin** | + delete devices, manage clients & install links, alert policies, settings, users, audit log |
 
-`LOCAL_ADMIN_EMAIL` / `LOCAL_ADMIN_PASSWORD` enable a break-glass admin login for when Authentik is unavailable. Leave the password empty to disable it.
+The admin account created in the setup wizard is a local login that keeps working when Authentik is unavailable; local users can change their password under Settings → General.
 
 ## Configuration reference
 
-All settings are environment variables (see `.env.example`):
+Most settings live in **Settings → General** and are stored in the database (the OIDC client secret is encrypted with the generated app key). A `.env` file is optional: any variable set there overrides the dashboard value and shows as locked in the UI. See `.env.example`.
 
-| Variable | Default | Purpose |
+| Variable | Where | Purpose |
 |---|---|---|
-| `PUBLIC_URL` | – | External URL; used for OIDC redirects and agent downloads |
-| `DATABASE_URL` | set by compose | Postgres DSN |
-| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | – | Authentik provider |
-| `OIDC_ADMIN_GROUPS` / `OIDC_TECH_GROUPS` / `OIDC_VIEWER_GROUPS` | `RMM Admins` / `RMM Technicians` / – | Group → role mapping |
-| `OIDC_DEFAULT_ROLE` | empty (deny) | Role for users in none of the groups |
-| `OIDC_SCOPES` | `openid,profile,email` | |
-| `LOCAL_ADMIN_EMAIL`, `LOCAL_ADMIN_PASSWORD` | – | Break-glass account |
-| `RUSTDESK_HOST`, `RUSTDESK_RELAY`, `RUSTDESK_KEY` | –, host, auto | RustDesk server details (key read from the hbbs volume) |
-| `METRICS_RETENTION_DAYS` | 14 | History kept for charts |
-| `SESSION_HOURS` | 12 | Dashboard session lifetime |
-| `TRUST_PROXY` | true | Use `X-Forwarded-For` / `CF-Connecting-IP` for audit IPs |
-| `COMPANY_NAME` | Hardy RMM | Shown in the UI; also the first client's name |
+| `PUBLIC_URL`, `COMPANY_NAME` | Settings or env | External URL (OIDC redirects, agent downloads) and display name |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Settings or env | Authentik provider |
+| `OIDC_ADMIN_GROUPS` / `OIDC_TECH_GROUPS` / `OIDC_VIEWER_GROUPS` | Settings or env | Group → role mapping (defaults `RMM Admins` / `RMM Technicians` / –) |
+| `OIDC_DEFAULT_ROLE` | Settings or env | Role for users in none of the groups (empty = deny) |
+| `RUSTDESK_HOST`, `RUSTDESK_RELAY`, `RUSTDESK_KEY` | Settings or env | RustDesk server details (key auto-detected from the hbbs volume) |
+| `LOCAL_ADMIN_EMAIL`, `LOCAL_ADMIN_PASSWORD` | env only | Extra break-glass admin; also skips the setup wizard |
+| `HARDY_BIND` | env only | Published port, default `8080` (use `127.0.0.1:8080` behind a local proxy) |
+| `METRICS_RETENTION_DAYS`, `SESSION_HOURS`, `TRUST_PROXY` | env only | History kept (14), session length (12 h), trust `X-Forwarded-For` (true) |
+| `DATABASE_URL` or `DB_HOST`/`DB_PASSWORD_FILE` | set by compose | Postgres connection |
 
 ## Operations
 
-* **Backups:** back up the `db` volume (`docker compose exec db pg_dump -U hardy hardy > backup.sql`) and the `rustdesk` volume (contains the RustDesk key pair).
+* **Backups:** back up the `db` volume (`docker compose exec db pg_dump -U hardy hardy > backup.sql`), the `secrets` volume (database password and the key that decrypts stored secrets) and the `rustdesk` volume (RustDesk key pair).
 * **Upgrades:** `git pull && docker compose up -d --build`. Agents check every 6 hours and self-update to the binary the server ships (or use **⋯ → Update agent**).
 * **Logs:** `docker compose logs -f hardy`.
 * **Health:** `GET /healthz`.

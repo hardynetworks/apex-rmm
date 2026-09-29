@@ -354,7 +354,7 @@ func (h *Hub) newDesktop(ctx context.Context, deviceID, userID string) (*desktop
 	h.mu.Lock()
 	h.desktops[d.id] = d
 	h.mu.Unlock()
-	_, err := h.Request(ctx, deviceID, proto.TypeDesktopStart, proto.DesktopStart{SessionID: d.id, Token: d.token, URL: h.s.cfg.WSURL() + "/api/agent/desktop"}, 30*time.Second)
+	_, err := h.Request(ctx, deviceID, proto.TypeDesktopStart, proto.DesktopStart{SessionID: d.id, Token: d.token, URL: h.s.conf().WSURL() + "/api/agent/desktop"}, 30*time.Second)
 	if err != nil {
 		h.dropDesktop(d)
 		return nil, err

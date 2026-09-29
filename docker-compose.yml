@@ -1,20 +1,47 @@
 # Hardy RMM stack
-#   cp .env.example .env   # then edit it
+#
 #   docker compose up -d --build
 #
-# Add "--profile caddy" to also run Caddy with automatic HTTPS if you don't
-# already have a reverse proxy.
+# Then open http://<server>:8080 and follow the setup wizard. Everything else
+# (public URL, Authentik SSO, RustDesk) is configured in Settings.
+#
+# A .env file is optional: any variable from .env.example set there overrides
+# the dashboard setting and locks that field.
+# Add "--profile caddy" to also run Caddy with automatic HTTPS.
 
 services:
+  # Generates the database password and encryption key once (stored in the "secrets" volume).
+  init:
+    image: alpine:3.20
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        for f in db_password app_key; do
+          if [ ! -s /secrets/$$f ]; then
+            head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40 > /secrets/$$f
+            echo "generated $$f"
+          fi
+        done
+        chmod 644 /secrets/db_password /secrets/app_key
+    volumes:
+      - secrets:/secrets
+
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
     environment:
       POSTGRES_USER: hardy
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: hardy
+      POSTGRES_PASSWORD_FILE: /secrets/db_password
     volumes:
       - db:/var/lib/postgresql/data
+      - secrets:/secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hardy -d hardy"]
       interval: 5s
@@ -28,13 +55,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
-      DATABASE_URL: postgres://hardy:${POSTGRES_PASSWORD}@db:5432/hardy?sslmode=disable
+      DB_HOST: db
+      DB_PASSWORD_FILE: /secrets/db_password
+      APP_KEY_FILE: /secrets/app_key
       RUSTDESK_KEY_FILE: /rustdesk/id_ed25519.pub
     ports:
-      - "${HARDY_BIND:-127.0.0.1:8080}:8080"
+      - "${HARDY_BIND:-8080}:8080"
     volumes:
+      - secrets:/secrets:ro
       - rustdesk:/rustdesk:ro
 
   # ---- RustDesk self-hosted server (backup remote access) ----
@@ -71,7 +103,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      HARDY_DOMAIN: ${HARDY_DOMAIN:-remote.hardyvpn.online}
+      HARDY_DOMAIN: ${HARDY_DOMAIN:-rmm.example.com}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy:/data
@@ -80,5 +112,6 @@ services:
 
 volumes:
   db:
+  secrets:
   rustdesk:
   caddy:

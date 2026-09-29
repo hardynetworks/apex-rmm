@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api';
+import { navigate } from '../router';
 import { Icon } from '../icons';
 import { Button, ErrorBox } from '../ui';
 
@@ -15,6 +16,7 @@ export function Login() {
 
   useEffect(() => {
     api.get('/auth/config').then((c) => {
+      if (c.setup) return navigate('/setup', true);
       setCfg(c);
       if (!c.sso) setShowLocal(true);
     });
@@ -45,7 +47,7 @@ export function Login() {
         {err && <ErrorBox msg={err} />}
         {cfg?.sso && (
           <a class="btn btn-primary btn-md btn-block" href={'/auth/login?return=' + encodeURIComponent(ret)}>
-            <Icon name="shield" /> <span>Sign in with Authentik</span>
+            <Icon name="shield" /> <span>Sign in with single sign-on</span>
           </a>
         )}
         {cfg?.local && cfg?.sso && !showLocal && (

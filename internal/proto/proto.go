@@ -77,26 +77,26 @@ type NIC struct {
 
 // Inventory is the static-ish hardware/OS description of a device.
 type Inventory struct {
-	Hostname      string `json:"hostname"`
-	OS            string `json:"os"`       // windows, darwin, linux
-	Platform      string `json:"platform"` // e.g. "Microsoft Windows 11 Pro", "ubuntu"
-	OSVersion     string `json:"os_version"`
-	KernelVersion string `json:"kernel_version"`
-	Arch          string `json:"arch"`
-	CPUModel      string `json:"cpu_model"`
-	CPUCores      int    `json:"cpu_cores"`
-	CPUThreads    int    `json:"cpu_threads"`
-	RAMTotal      uint64 `json:"ram_total"`
-	Manufacturer  string `json:"manufacturer,omitempty"`
-	Model         string `json:"model,omitempty"`
-	Serial        string `json:"serial,omitempty"`
-	BootTime      int64  `json:"boot_time"`
-	Disks         []Disk `json:"disks"`
-	NICs          []NIC  `json:"nics"`
+	Hostname      string   `json:"hostname"`
+	OS            string   `json:"os"`       // windows, darwin, linux
+	Platform      string   `json:"platform"` // e.g. "Microsoft Windows 11 Pro", "ubuntu"
+	OSVersion     string   `json:"os_version"`
+	KernelVersion string   `json:"kernel_version"`
+	Arch          string   `json:"arch"`
+	CPUModel      string   `json:"cpu_model"`
+	CPUCores      int      `json:"cpu_cores"`
+	CPUThreads    int      `json:"cpu_threads"`
+	RAMTotal      uint64   `json:"ram_total"`
+	Manufacturer  string   `json:"manufacturer,omitempty"`
+	Model         string   `json:"model,omitempty"`
+	Serial        string   `json:"serial,omitempty"`
+	BootTime      int64    `json:"boot_time"`
+	Disks         []Disk   `json:"disks"`
+	NICs          []NIC    `json:"nics"`
 	LoggedInUsers []string `json:"logged_in_users"`
-	AgentVersion  string `json:"agent_version"`
-	Virtual       string `json:"virtual,omitempty"`
-	RustDeskID    string `json:"rustdesk_id,omitempty"`
+	AgentVersion  string   `json:"agent_version"`
+	Virtual       string   `json:"virtual,omitempty"`
+	RustDeskID    string   `json:"rustdesk_id,omitempty"`
 }
 
 // Hello is sent right after the agent control socket connects.
@@ -106,17 +106,17 @@ type Hello struct {
 
 // Metrics is sent periodically.
 type Metrics struct {
-	CPU       float64  `json:"cpu"`
-	Mem       float64  `json:"mem"`
-	MemUsed   uint64   `json:"mem_used"`
-	Disk      float64  `json:"disk"` // highest disk usage percent
-	Disks     []Disk   `json:"disks"`
-	NetRx     uint64   `json:"net_rx"` // bytes/sec
-	NetTx     uint64   `json:"net_tx"`
-	Uptime    uint64   `json:"uptime"`
-	Load1     float64  `json:"load1"`
-	Procs     int      `json:"procs"`
-	Users     []string `json:"users"`
+	CPU     float64  `json:"cpu"`
+	Mem     float64  `json:"mem"`
+	MemUsed uint64   `json:"mem_used"`
+	Disk    float64  `json:"disk"` // highest disk usage percent
+	Disks   []Disk   `json:"disks"`
+	NetRx   uint64   `json:"net_rx"` // bytes/sec
+	NetTx   uint64   `json:"net_tx"`
+	Uptime  uint64   `json:"uptime"`
+	Load1   float64  `json:"load1"`
+	Procs   int      `json:"procs"`
+	Users   []string `json:"users"`
 }
 
 // RunScript asks the agent to execute a script.

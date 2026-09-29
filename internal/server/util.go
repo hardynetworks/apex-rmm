@@ -89,7 +89,7 @@ func constEq(a, b string) bool {
 }
 
 func (s *Server) clientIP(r *http.Request) string {
-	if s.cfg.TrustProxy {
+	if s.conf().TrustProxy {
 		if v := r.Header.Get("CF-Connecting-IP"); v != "" {
 			return v
 		}

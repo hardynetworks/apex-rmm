@@ -7,6 +7,7 @@ import { Icon } from './icons';
 import { Link, match, navigate, useLocation } from './router';
 import { ConfirmHost, Spinner, Toasts } from './ui';
 import { Login } from './pages/Login';
+import { Setup } from './pages/Setup';
 import { Dashboard } from './pages/Dashboard';
 import { Devices } from './pages/Devices';
 import { DevicePage } from './pages/Device';
@@ -138,11 +139,12 @@ function App() {
   const { path } = useLocation();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   useEffect(() => {
-    if (path === '/login') return;
+    if (path === '/login' || path === '/setup') return;
     api.get<User>('/auth/me').then(setUser).catch(() => setUser(null));
-  }, [path === '/login']);
+  }, [path === '/login' || path === '/setup']);
 
   if (path === '/login') return <Login />;
+  if (path === '/setup') return <Setup />;
   if (user === undefined) return <div class="boot"><Spinner label="Loading…" /></div>;
   if (user === null) {
     navigate('/login?return=' + encodeURIComponent(path), true);

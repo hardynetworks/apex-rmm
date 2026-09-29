@@ -14,6 +14,14 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	// "hardy-server init-secrets <dir>" generates the DB password and app key (docker compose "init" service).
+	if len(os.Args) > 2 && os.Args[1] == "init-secrets" {
+		if err := server.InitSecrets(os.Args[2]); err != nil {
+			slog.Error("init-secrets", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
 	slog.Info("starting Hardy RMM server", "version", proto.Version)
 	cfg, err := server.LoadConfig()
 	if err != nil {

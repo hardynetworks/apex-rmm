@@ -300,7 +300,7 @@ func (s *Server) raiseAlert(ctx context.Context, p map[string]any, deviceID, dev
 		s.db.Setting(ctx, "general", &st)
 		if st.WebhookURL != "" {
 			go func() {
-				if err := s.notify(context.Background(), st, sev, title, msg+"\n"+s.cfg.PublicURL+"/devices/"+deviceID); err != nil {
+				if err := s.notify(context.Background(), st, sev, title, msg+"\n"+s.conf().PublicURL+"/devices/"+deviceID); err != nil {
 					slog.Warn("webhook notify failed", "err", err)
 				}
 			}()
@@ -315,7 +315,7 @@ func (s *Server) notify(ctx context.Context, st Settings, severity, title, body 
 	icon := map[string]string{"critical": "🔴", "warning": "🟠", "info": "🔵"}[severity]
 	switch st.WebhookFormat {
 	case "discord":
-		payload, _ = json.Marshal(map[string]any{"username": s.cfg.CompanyName, "content": fmt.Sprintf("%s **%s**\n%s", icon, title, body)})
+		payload, _ = json.Marshal(map[string]any{"username": s.conf().CompanyName, "content": fmt.Sprintf("%s **%s**\n%s", icon, title, body)})
 	case "slack":
 		payload, _ = json.Marshal(map[string]any{"text": fmt.Sprintf("%s *%s*\n%s", icon, title, body)})
 	case "ntfy":

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,22 +20,39 @@ import (
 
 // Server is the Hardy RMM API + dashboard server.
 type Server struct {
-	cfg  *Config
-	db   *DB
-	auth *Auth
-	hub  *Hub
+	base      *Config                // environment
+	cfgp      atomic.Pointer[Config] // effective (environment + Settings)
+	box       *secretBox
+	setupCode string
+	db        *DB
+	auth      *Auth
+	hub       *Hub
 }
 
-// New builds the server (connects to DB, discovers OIDC).
+// conf returns the current effective configuration.
+func (s *Server) conf() *Config { return s.cfgp.Load() }
+
+// New builds the server (connects to DB, loads settings, starts OIDC discovery).
 func New(ctx context.Context, cfg *Config) (*Server, error) {
 	db, err := OpenDB(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, db: db}
-	s.hub = newHub(s)
-	if s.auth, err = newAuth(ctx, s); err != nil {
+	s := &Server{base: cfg, db: db, box: newSecretBox(cfg.AppKeyFile)}
+	s.cfgp.Store(cfg.withSettings(SystemSettings{}, ""))
+	if err := s.reloadConfig(ctx); err != nil {
 		return nil, err
+	}
+	s.hub = newHub(s)
+	s.auth = newAuth(s)
+	go s.auth.reloadWithRetry(ctx)
+	if s.setupNeeded(ctx) {
+		s.setupCode = strings.ToUpper(randPassword(8))
+		fmt.Printf("\n==============================================================\n"+
+			"  Hardy RMM is not set up yet. Open the dashboard in a browser\n"+
+			"  and enter this setup code:\n\n"+
+			"      setup code: %s\n"+
+			"==============================================================\n\n", s.setupCode)
 	}
 	// Nobody is connected at startup.
 	_, _ = db.Exec(ctx, `UPDATE devices SET online=false`)
@@ -47,14 +66,14 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.alertLoop(ctx)
 	go s.schedulerLoop(ctx)
 	go s.cleanupLoop(ctx)
-	srv := &http.Server{Addr: s.cfg.Listen, Handler: s.routes(), ReadHeaderTimeout: 15 * time.Second}
+	srv := &http.Server{Addr: s.conf().Listen, Handler: s.routes(), ReadHeaderTimeout: 15 * time.Second}
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}()
-	slog.Info("Hardy RMM listening", "addr", s.cfg.Listen, "public_url", s.cfg.PublicURL, "sso", s.cfg.OIDCEnabled())
+	slog.Info("Hardy RMM listening", "addr", s.conf().Listen, "public_url", s.conf().PublicURL, "sso", s.conf().OIDCEnabled())
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -66,7 +85,9 @@ func (s *Server) routes() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(securityHeaders)
 
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]any{"ok": true, "agents": s.hub.OnlineCount()}) })
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"ok": true, "agents": s.hub.OnlineCount()})
+	})
 
 	// SSO
 	r.Get("/auth/login", s.auth.handleLogin)
@@ -83,11 +104,14 @@ func (s *Server) routes() http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/auth/config", s.auth.handleConfig)
 		r.Post("/auth/local", s.auth.handleLocalLogin)
+		r.Get("/setup", s.handleSetupStatus)
+		r.Post("/setup", s.handleSetup)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.auth.requireUser)
 			r.Get("/auth/me", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, userFrom(r)) })
 			r.Post("/auth/logout", s.auth.handleLogout)
+			r.Post("/auth/password", s.changePassword)
 
 			// read-only (viewer+)
 			r.Get("/dashboard", s.handleDashboard)
@@ -163,6 +187,9 @@ func (s *Server) routes() http.Handler {
 				r.Get("/settings", s.getSettings)
 				r.Put("/settings", s.putSettings)
 				r.Post("/settings/test-webhook", s.testWebhook)
+				r.Get("/settings/system", s.getSystemSettings)
+				r.Put("/settings/system", s.putSystemSettings)
+				r.Post("/settings/test-oidc", s.testOIDC)
 				r.Get("/audit", s.listAudit)
 				r.Delete("/tickets/{id}", s.deleteTicket)
 			})
@@ -189,7 +216,7 @@ func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "not found")
 		return
 	}
-	p := filepath.Join(s.cfg.WebDir, filepath.Clean("/"+r.URL.Path))
+	p := filepath.Join(s.conf().WebDir, filepath.Clean("/"+r.URL.Path))
 	if st, err := os.Stat(p); err == nil && !st.IsDir() {
 		if strings.HasPrefix(r.URL.Path, "/assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -198,7 +225,7 @@ func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache")
-	http.ServeFile(w, r, filepath.Join(s.cfg.WebDir, "index.html"))
+	http.ServeFile(w, r, filepath.Join(s.conf().WebDir, "index.html"))
 }
 
 var browserUpgrader = websocket.Upgrader{ReadBufferSize: 16 << 10, WriteBufferSize: 64 << 10}
@@ -235,7 +262,7 @@ func (s *Server) cleanupLoop(ctx context.Context) {
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {
-		_, _ = s.db.Exec(ctx, `DELETE FROM device_metrics WHERE ts < now() - make_interval(days => $1)`, s.cfg.MetricsRetentionDays)
+		_, _ = s.db.Exec(ctx, `DELETE FROM device_metrics WHERE ts < now() - make_interval(days => $1)`, s.conf().MetricsRetentionDays)
 		_, _ = s.db.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
 		_, _ = s.db.Exec(ctx, `UPDATE job_results SET status='timeout', finished_at=now() WHERE status='running' AND started_at < now() - interval '6 hours'`)
 		_, _ = s.db.Exec(ctx, `DELETE FROM audit_log WHERE created_at < now() - interval '365 days'`)
