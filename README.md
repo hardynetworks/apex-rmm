@@ -12,12 +12,6 @@ A self-hosted Remote Monitoring & Management platform that runs in Docker, signs
 | **Multi-tenant** | Clients → sites → devices, per-client install links |
 | **Security** | Authentik OIDC with PKCE, role mapping from Authentik groups (admin / technician / viewer), full audit log, per-device secrets |
 
-![Dashboard](docs/screenshots/dashboard.png)
-
-| Remote control | Device | Terminal |
-|---|---|---|
-| ![](docs/screenshots/remote-control.png) | ![](docs/screenshots/device.png) | ![](docs/screenshots/terminal.png) |
-
 ---
 
 ## Architecture
