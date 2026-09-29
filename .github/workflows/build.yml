@@ -1,0 +1,101 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go – test & cross-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build server and agents (all 7 platforms)
+        run: make server agents VERSION=0.1.0-ci.${{ github.run_number }}
+
+      - name: List binaries
+        run: ls -lh dist dist/agents
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hardy-agents
+          path: dist/agents/
+          retention-days: 7
+
+  web:
+    name: Dashboard – typecheck & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+
+  docker:
+    name: Docker – build & smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the stack
+        run: docker compose up -d --build hardy
+
+      - name: Wait for the server to be healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/healthz; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "server did not become healthy"
+          docker compose ps
+          docker compose logs
+          exit 1
+
+      - name: Check setup wizard, dashboard and agent downloads
+        run: |
+          set -e
+          echo "--- /api/setup"
+          curl -fsS http://localhost:8080/api/setup | tee /tmp/setup.json; echo
+          grep -q '"needed":true' /tmp/setup.json
+          echo "--- setup code printed in log"
+          docker compose logs hardy | grep -i "setup code"
+          echo "--- dashboard"
+          curl -fsS http://localhost:8080/ | grep -qi "<div id=\"app\"\|<script"
+          echo "--- agent binaries"
+          for p in windows/amd64 linux/amd64 linux/arm64 darwin/arm64; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/download/agent/$p)
+            echo "$p -> $code"
+            [ "$code" = 200 ]
+          done
+
+      - name: Logs
+        if: always()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
