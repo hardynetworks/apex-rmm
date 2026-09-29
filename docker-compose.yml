@@ -1,0 +1,84 @@
+# Hardy RMM stack
+#   cp .env.example .env   # then edit it
+#   docker compose up -d --build
+#
+# Add "--profile caddy" to also run Caddy with automatic HTTPS if you don't
+# already have a reverse proxy.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hardy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: hardy
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hardy -d hardy"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  hardy:
+    build: .
+    image: hardy-rmm:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://hardy:${POSTGRES_PASSWORD}@db:5432/hardy?sslmode=disable
+      RUSTDESK_KEY_FILE: /rustdesk/id_ed25519.pub
+    ports:
+      - "${HARDY_BIND:-127.0.0.1:8080}:8080"
+    volumes:
+      - rustdesk:/rustdesk:ro
+
+  # ---- RustDesk self-hosted server (backup remote access) ----
+  hbbs:
+    image: rustdesk/rustdesk-server:latest
+    restart: unless-stopped
+    command: hbbs
+    volumes:
+      - rustdesk:/root
+    ports:
+      - "21115:21115"
+      - "21116:21116"
+      - "21116:21116/udp"
+      - "21118:21118"
+    depends_on:
+      - hbbr
+
+  hbbr:
+    image: rustdesk/rustdesk-server:latest
+    restart: unless-stopped
+    command: hbbr
+    volumes:
+      - rustdesk:/root
+    ports:
+      - "21117:21117"
+      - "21119:21119"
+
+  # ---- optional reverse proxy with automatic Let's Encrypt ----
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HARDY_DOMAIN: ${HARDY_DOMAIN:-remote.hardyvpn.online}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    depends_on:
+      - hardy
+
+volumes:
+  db:
+  rustdesk:
+  caddy:

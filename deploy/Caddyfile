@@ -1,0 +1,5 @@
+# Used by `docker compose --profile caddy up -d`
+{$HARDY_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy hardy:8080
+}
