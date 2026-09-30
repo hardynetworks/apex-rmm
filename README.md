@@ -37,54 +37,87 @@ A self-hosted Remote Monitoring & Management platform that runs in Docker, signs
 * The server relays terminal and desktop traffic; nothing is stored.
 * One static Go binary per platform, no runtime dependencies (built with `CGO_ENABLED=0`, including macOS).
 
-## Quick start
+## Install (Ubuntu)
 
-### 1. DNS
+These steps set Apex RMM up on an Ubuntu server with Docker. Any Linux host with Docker Engine and the Compose plugin works the same way.
 
-| Record | Points to | Notes |
-|---|---|---|
-| `rmm.example.com` | your Docker host | Can be Cloudflare-proxied (WebSockets work) |
-| `rustdesk.example.com` | your Docker host | **DNS only** (grey cloud) – RustDesk uses raw TCP/UDP |
+### 1. Install Docker
 
-Open/forward TCP **21115-21119** and UDP **21116** to the host for RustDesk.
-
-### 2. Start it
+Check whether Docker is already there:
 
 ```bash
-git clone https://github.com/hardynetworks/apex-rmm.git && cd apex-rmm
+docker --version && docker compose version
+```
+
+If either command fails, install Docker's official packages and let your user run it:
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER   # log out and back in afterwards
+```
+
+### 2. Download and start Apex RMM
+
+```bash
+sudo git clone https://github.com/hardynetworks/apex-rmm.git /opt/apex-rmm
+sudo chown -R $USER: /opt/apex-rmm
+cd /opt/apex-rmm
 docker compose up -d --build
 ```
 
-No config file is needed. The first build cross-compiles the agent for all 7 platforms, so it takes a few minutes. A random database password and encryption key are generated automatically on first start.
+No config file is needed. The first build compiles the dashboard and the agent for all 7 platforms, so it takes 5–10 minutes. A random database password and encryption key are generated on first start.
+
+The dashboard is published on port **8080**. If something else already uses it (`sudo ss -tlnp | grep :8080`), choose another port before starting:
+
+```bash
+echo "APEX_BIND=8081" > .env        # or 127.0.0.1:8080 when a proxy on the same host fronts it
+docker compose up -d --build
+```
+
+Check that everything is running:
+
+```bash
+docker compose ps
+curl -s http://localhost:8080/healthz   # {"agents":0,"ok":true}
+```
+
+The containers restart automatically after a reboot (`restart: unless-stopped`), as long as the Docker service is enabled (`sudo systemctl enable docker`, the default on Ubuntu).
 
 ### 3. Run the setup wizard
 
-Open `http://<your-server>:8080`. The wizard asks for a **setup code** (proof that you own the server), which is printed in the log:
+Get the one-time **setup code** (proof that you own the server) from the log:
 
 ```bash
 docker compose logs apex | grep "setup code"
 ```
 
-It then asks for your company name and public URL and creates your first admin account (a local login that keeps working even if SSO is down).
+Open `http://<server-ip>:8080`, enter the code, your company name and public URL, and create the first admin account. This is a local login that keeps working even if SSO is down. Until HTTPS is set up, use `http://<server-ip>:8080` as the public URL.
 
-### 4. Finish in Settings → General
+### 4. Publish it over HTTPS
 
-Everything else is set in the dashboard, and changes apply immediately without a restart:
+Put a reverse proxy in front of port 8080. **WebSocket upgrades must be allowed** (`/api/agent/ws`, `/api/agent/desktop`, `/api/ws/*`) for remote control and the terminal.
 
-* **Server:** public URL and company name.
-* **Single sign-on:** Authentik issuer URL, client ID and secret, and which Authentik groups map to admin, technician and viewer. There's a **Test** button for the issuer, and the redirect URI to paste into Authentik is shown for you. See [docs/AUTHENTIK.md](docs/AUTHENTIK.md).
-* **RustDesk:** the host devices use to reach the bundled RustDesk server. The server key is detected automatically.
+| Record | Points to | Notes |
+|---|---|---|
+| `rmm.example.com` | your reverse proxy | Can be Cloudflare-proxied (WebSockets work) |
+| `rustdesk.example.com` | your Docker host's public IP | Optional. **DNS only** (grey cloud); RustDesk uses raw TCP/UDP |
+
+* **NetBird reverse proxy:** make the Docker host a NetBird peer, then **Reverse Proxy → Services → Add Service**. Use mode *HTTP*, your domain (plus the CNAME NetBird asks for), target = the host as a *Peer*, protocol HTTP, port 8080. Leave NetBird **authentication off**: agents can't pass a NetBird login, and Apex has its own login and SSO. Use *Access Control* if you want to restrict by country or IP.
+* **Nginx Proxy Manager:** new proxy host → `http://<host>:8080`, enable *Websockets Support*, request an SSL certificate.
+* **Traefik:** a normal HTTP router works; Traefik proxies WebSockets automatically.
+* **No proxy yet?** Set `APEX_DOMAIN=rmm.example.com` in `.env`, then run `docker compose --profile caddy up -d` for Caddy with automatic Let's Encrypt. Ports 80 and 443 must reach the host.
+
+When `https://rmm.example.com` loads, set **Public URL** in **Settings → General** to that address **before deploying agents**. It's the address the agents connect to.
+
+### 5. Finish in Settings → General
+
+Changes apply immediately, without a restart:
+
+* **Single sign-on:** Authentik issuer URL, client ID and secret, and which Authentik groups map to admin, technician and viewer. A **Test** button checks the issuer, and the redirect URI to paste into Authentik (`https://rmm.example.com/auth/callback`) is shown for you. See [docs/AUTHENTIK.md](docs/AUTHENTIK.md).
+* **RustDesk (optional backup):** forward TCP **21115-21119** and UDP **21116** from your router to the host, then enter the RustDesk hostname here. The server key is detected automatically.
 * **Notifications:** Discord, Slack, ntfy or generic webhook.
 
-**Reverse proxy:** the dashboard is published on port 8080. Put your existing proxy in front of it; **WebSocket upgrades must be allowed** (`/api/agent/ws`, `/api/agent/desktop`, `/api/ws/*`).
-
-* **Nginx Proxy Manager:** new proxy host → `http://<host>:8080`, enable *Websockets Support*, request an SSL cert.
-* **Traefik:** a normal HTTP router works; Traefik proxies WebSockets automatically.
-* **No proxy yet?** `docker compose --profile caddy up -d` runs Caddy with automatic Let's Encrypt for `APEX_DOMAIN` (set it in `.env`).
-
-Once HTTPS works, update **Public URL** in Settings to the `https://` address before deploying agents.
-
-### 5. Add devices
+### 6. Add devices
 
 **Clients → Deploy agent** (or **Devices → Add device**) creates an install link:
 
@@ -101,7 +134,19 @@ curl -fsSL https://rmm.example.com/install/<token>/linux.sh | sudo sh
 
 The agent installs as a service (`Apex RMM Agent` on Windows, systemd/SysV/OpenRC on Linux, a LaunchDaemon on macOS) and appears on the dashboard within seconds.
 
-Manual install: download `/download/agent/<os>/<arch>` and run `apex-agent install --server https://rmm.example.com --token <token>`. Uninstall with `apex-agent uninstall`, or delete the device in the dashboard (the agent removes itself).
+Manual install: download `/download/agent/<os>/<arch>` and run `apex-agent install --server https://rmm.example.com --token <token>`.
+
+**Removing an agent:** delete the device in the dashboard while it's online and the agent removes itself. Or, on the device:
+
+```powershell
+# Windows (elevated PowerShell)
+& "C:\Program Files\ApexRMM\apex-agent.exe" uninstall
+Remove-Item "C:\Program Files\ApexRMM", "C:\ProgramData\ApexRMM" -Recurse -Force -ErrorAction SilentlyContinue
+```
+```bash
+# macOS / Linux
+sudo apex-agent uninstall     # macOS: sudo /usr/local/apex-agent/apex-agent uninstall
+```
 
 ## Remote control
 
@@ -169,15 +214,69 @@ Most settings live in **Settings → General** and are stored in the database (t
 
 This project was called Hardy RMM before. The rename changed the agent's service name and install folders and the Docker volume names, so an existing install starts fresh:
 
-1. Stop the old stack (`docker compose down` in the old folder), then clone this repo and `docker compose up -d --build` as in the quick start. The old `hardy-rmm_*` volumes are left untouched; delete them with `docker volume rm` once you don't need them.
+1. Stop the old stack (`docker compose down` in the old folder), then install as in [Install (Ubuntu)](#install-ubuntu). The old `hardy-rmm_*` volumes are left untouched; delete them with `docker volume rm` once you don't need them.
 2. Re-deploy agents with a new install link. The new installer removes the old `hardy-agent` service and folders automatically before installing `apex-agent`.
 
-## Operations
+## Updating and maintenance
 
-* **Backups:** back up the `db` volume (`docker compose exec db pg_dump -U apex apex > backup.sql`), the `secrets` volume (database password and the key that decrypts stored secrets) and the `rustdesk` volume (RustDesk key pair).
-* **Upgrades:** `git pull && docker compose up -d --build`. Agents check every 6 hours and self-update to the binary the server ships (or use **⋯ → Update agent**).
-* **Logs:** `docker compose logs -f apex`.
-* **Health:** `GET /healthz`.
+All commands run in the install folder (`cd /opt/apex-rmm`).
+
+### Update to the latest version
+
+```bash
+cd /opt/apex-rmm
+git pull
+docker compose up -d --build
+```
+
+Your data, settings and devices are kept (they live in Docker volumes). Agents check for a new version every 6 hours and update themselves. To update one right away, use **⋯ → Update agent** on the device page.
+
+Optionally, clear out old build layers afterwards: `docker image prune -f`.
+
+### Start, stop and logs
+
+| | |
+|---|---|
+| Status | `docker compose ps` |
+| Logs (follow) | `docker compose logs -f apex` |
+| Restart | `docker compose restart apex` |
+| Stop | `docker compose down` (data is kept) |
+| Start again | `docker compose up -d` |
+| Health check | `curl http://localhost:8080/healthz` |
+
+### Backups
+
+Everything lives in three Docker volumes: `apex-rmm_db` (database), `apex-rmm_secrets` (database password and the key that decrypts saved secrets such as the SSO client secret) and `apex-rmm_rustdesk` (RustDesk key pair). Back up all three. Without the secrets backup, a restored server still works, but you'd have to re-enter the SSO client secret in Settings.
+
+```bash
+cd /opt/apex-rmm
+mkdir -p backups
+docker compose exec -T db pg_dump -U apex apex | gzip > backups/apex-db-$(date +%F).sql.gz
+for v in secrets rustdesk; do
+  docker run --rm -v apex-rmm_$v:/v:ro -v "$PWD/backups":/b alpine tar czf /b/apex-$v-$(date +%F).tgz -C /v .
+done
+```
+
+To restore onto a new server, clone the repo as in step 2 but **don't start it yet**. Copy the `backups` folder into `/opt/apex-rmm`, then:
+
+```bash
+cd /opt/apex-rmm
+for v in secrets rustdesk; do
+  docker run --rm -v apex-rmm_$v:/v -v "$PWD/backups":/b alpine sh -c "rm -rf /v/* && tar xzf /b/apex-$v-<date>.tgz -C /v"
+done
+docker compose up -d db
+until docker compose exec -T db pg_isready -U apex -d apex; do sleep 2; done
+gunzip -c backups/apex-db-<date>.sql.gz | docker compose exec -T db psql -U apex apex
+docker compose up -d
+```
+
+### Uninstall the server
+
+```bash
+cd /opt/apex-rmm
+docker compose down -v      # -v also deletes the volumes (all data)
+sudo rm -rf /opt/apex-rmm
+```
 
 ## Development
 
