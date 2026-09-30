@@ -14,9 +14,9 @@ func LogPath(name string) string {
 	case "windows":
 		return filepath.Join(filepath.Dir(ConfigPath()), name+".log")
 	case "darwin":
-		return "/Library/Logs/HardyRMM/" + name + ".log"
+		return "/Library/Logs/ApexRMM/" + name + ".log"
 	default:
-		return "/var/log/hardy-agent/" + name + ".log"
+		return "/var/log/apex-agent/" + name + ".log"
 	}
 }
 

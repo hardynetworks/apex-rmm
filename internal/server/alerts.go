@@ -322,7 +322,7 @@ func (s *Server) notify(ctx context.Context, st Settings, severity, title, body 
 		payload = []byte(body)
 		contentType = "text/plain"
 	default:
-		payload, _ = json.Marshal(map[string]any{"source": "hardy-rmm", "severity": severity, "title": title, "message": body, "text": title + "\n" + body, "content": title + "\n" + body})
+		payload, _ = json.Marshal(map[string]any{"source": "apex-rmm", "severity": severity, "title": title, "message": body, "text": title + "\n" + body, "content": title + "\n" + body})
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

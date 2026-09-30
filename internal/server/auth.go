@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	sessionCookie = "hardy_session"
-	oidcCookie    = "hardy_oidc"
+	sessionCookie = "apex_session"
+	oidcCookie    = "apex_oidc"
 )
 
 // User is the authenticated dashboard user.
@@ -449,7 +449,7 @@ func (a *Auth) requireUser(next http.Handler) http.Handler {
 			writeErr(w, http.StatusUnauthorized, "not signed in")
 			return
 		}
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("X-Hardy-CSRF") != "1" {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("X-Apex-CSRF") != "1" {
 			writeErr(w, http.StatusForbidden, "missing CSRF header")
 			return
 		}

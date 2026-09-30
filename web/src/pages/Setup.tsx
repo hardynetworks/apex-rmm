@@ -7,7 +7,7 @@ import { Button, ErrorBox, Field, Spinner } from '../ui';
 export function Setup() {
   const [status, setStatus] = useState<any>(null);
   const [step, setStep] = useState(1);
-  const [v, setV] = useState({ code: '', company_name: 'Hardy RMM', public_url: location.origin, name: '', email: '', password: '', password2: '' });
+  const [v, setV] = useState({ code: '', company_name: 'Apex RMM', public_url: location.origin, name: '', email: '', password: '', password2: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k: string, val: string) => setV({ ...v, [k]: val });
@@ -49,8 +49,8 @@ export function Setup() {
     <div class="login">
       <div class="login-card setup-card">
         <div class="login-brand">
-          <svg viewBox="0 0 32 32" width="44" height="44"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M9 8v16M23 8v16M9 16h14" stroke="#fff" stroke-width="3.2" stroke-linecap="round" /></svg>
-          <h1>Welcome to Hardy RMM</h1>
+          <svg viewBox="0 0 32 32" width="44" height="44"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M8.5 24L16 8l7.5 16M11.6 18.5h8.8" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h1>Welcome to Apex RMM</h1>
           <p class="muted">Let's get your server set up.</p>
         </div>
         <div class="steps">{[1, 2, 3].map((i) => <span key={i} class={i <= step ? 'on' : ''} />)}</div>
@@ -59,7 +59,7 @@ export function Setup() {
         {step === 1 && (
           <form onSubmit={next} class="stack">
             <p class="small">To prove you own this server, enter the setup code printed in its log:</p>
-            <pre class="output">docker compose logs hardy | grep "setup code"</pre>
+            <pre class="output">docker compose logs apex | grep "setup code"</pre>
             <Field label="Setup code"><input value={v.code} autoFocus autoComplete="off" class="mono" onInput={(e) => set('code', (e.target as HTMLInputElement).value)} /></Field>
             <Button variant="primary" class="btn-block" onClick={next as any}>Continue</Button>
           </form>

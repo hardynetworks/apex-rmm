@@ -108,12 +108,12 @@ export function DeployModal({ clients, clientId, onClose }: { clients: any[]; cl
           {os === 'windows' && <>
             <p>Run in an <b>elevated PowerShell</b> (Run as Administrator):</p>
             <CopyText text={token.urls.windows} />
-            <p class="muted small">Works on Windows 10/11 and Server 2016+. Installs to <code>C:\Program Files\HardyRMM</code> as the "Hardy RMM Agent" service.</p>
+            <p class="muted small">Works on Windows 10/11 and Server 2016+. Installs to <code>C:\Program Files\ApexRMM</code> as the "Apex RMM Agent" service.</p>
           </>}
           {os === 'macos' && <>
             <p>Run in Terminal:</p>
             <CopyText text={token.urls.macos} />
-            <p class="muted small">Then grant <b>Screen Recording</b> and <b>Accessibility</b> to <code>/usr/local/hardy-agent/hardy-agent</code> in System Settings → Privacy &amp; Security for remote control (or deploy a PPPC profile via MDM).</p>
+            <p class="muted small">Then grant <b>Screen Recording</b> and <b>Accessibility</b> to <code>/usr/local/apex-agent/apex-agent</code> in System Settings → Privacy &amp; Security for remote control (or deploy a PPPC profile via MDM).</p>
           </>}
           {os === 'linux' && <>
             <p>Run as root:</p>
@@ -123,7 +123,7 @@ export function DeployModal({ clients, clientId, onClose }: { clients: any[]; cl
           <details class="mt">
             <summary>Manual install</summary>
             <p class="small">Download the agent (<a class="link" href={`${origin}/download/agent/windows/amd64`}>Windows x64</a> · <a class="link" href={`${origin}/download/agent/darwin/arm64`}>macOS Apple silicon</a> · <a class="link" href={`${origin}/download/agent/darwin/amd64`}>macOS Intel</a> · <a class="link" href={`${origin}/download/agent/linux/amd64`}>Linux x64</a> · <a class="link" href={`${origin}/download/agent/linux/arm64`}>Linux ARM64</a>) and run:</p>
-            <CopyText text={`hardy-agent install --server ${origin} --token ${token.token}`} />
+            <CopyText text={`apex-agent install --server ${origin} --token ${token.token}`} />
           </details>
           <p class="muted small mt">{token.expires_at ? `Expires ${fmtDate(token.expires_at)}` : 'Never expires'}{token.max_uses ? ` · ${token.max_uses} installs max` : ''}. Revoke it any time from the Clients page.</p>
         </>

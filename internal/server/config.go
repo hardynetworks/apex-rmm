@@ -131,13 +131,13 @@ func databaseURL() string {
 		pw = readSecretFile(env("DB_PASSWORD_FILE", ""))
 	}
 	if pw == "" {
-		pw = "hardy"
+		pw = "apex"
 	}
 	u := url.URL{
 		Scheme:   "postgres",
-		User:     url.UserPassword(env("DB_USER", "hardy"), pw),
+		User:     url.UserPassword(env("DB_USER", "apex"), pw),
 		Host:     env("DB_HOST", "localhost") + ":" + env("DB_PORT", "5432"),
-		Path:     "/" + env("DB_NAME", "hardy"),
+		Path:     "/" + env("DB_NAME", "apex"),
 		RawQuery: "sslmode=" + env("DB_SSLMODE", "disable"),
 	}
 	return u.String()
@@ -232,7 +232,7 @@ func (base *Config) withSettings(ss SystemSettings, secret string) *Config {
 		c.PublicURL = "http://localhost:8080"
 	}
 	if c.CompanyName == "" {
-		c.CompanyName = "Hardy RMM"
+		c.CompanyName = "Apex RMM"
 	}
 	if len(c.OIDCAdminGroups) == 0 {
 		c.OIDCAdminGroups = []string{"RMM Admins"}

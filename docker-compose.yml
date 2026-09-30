@@ -1,4 +1,4 @@
-# Hardy RMM stack
+# Apex RMM stack
 #
 #   docker compose up -d --build
 #
@@ -8,6 +8,8 @@
 # A .env file is optional: any variable from .env.example set there overrides
 # the dashboard setting and locks that field.
 # Add "--profile caddy" to also run Caddy with automatic HTTPS.
+
+name: apex-rmm
 
 services:
   # Generates the database password and encryption key once (stored in the "secrets" volume).
@@ -36,21 +38,21 @@ services:
       init:
         condition: service_completed_successfully
     environment:
-      POSTGRES_USER: hardy
-      POSTGRES_DB: hardy
+      POSTGRES_USER: apex
+      POSTGRES_DB: apex
       POSTGRES_PASSWORD_FILE: /secrets/db_password
     volumes:
       - db:/var/lib/postgresql/data
       - secrets:/secrets:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hardy -d hardy"]
+      test: ["CMD-SHELL", "pg_isready -U apex -d apex"]
       interval: 5s
       timeout: 5s
       retries: 20
 
-  hardy:
+  apex:
     build: .
-    image: hardy-rmm:latest
+    image: apex-rmm:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -64,7 +66,7 @@ services:
       APP_KEY_FILE: /secrets/app_key
       RUSTDESK_KEY_FILE: /rustdesk/id_ed25519.pub
     ports:
-      - "${HARDY_BIND:-8080}:8080"
+      - "${APEX_BIND:-8080}:8080"
     volumes:
       - secrets:/secrets:ro
       - rustdesk:/rustdesk:ro
@@ -103,12 +105,12 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      HARDY_DOMAIN: ${HARDY_DOMAIN:-rmm.example.com}
+      APEX_DOMAIN: ${APEX_DOMAIN:-rmm.example.com}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy:/data
     depends_on:
-      - hardy
+      - apex
 
 volumes:
   db:

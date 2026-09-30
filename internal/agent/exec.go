@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 )
 
 func itoa(i int) string { return strconv.Itoa(i) }
@@ -110,7 +110,7 @@ func runScript(rs proto.RunScript) proto.ScriptResult {
 		res.Status, res.ExitCode, res.Stdout, res.Stderr, res.Finished = status, code, stdout, stderr, time.Now().Unix()
 		return res
 	}
-	dir, err := os.MkdirTemp("", "hardy-script-")
+	dir, err := os.MkdirTemp("", "apex-script-")
 	if err != nil {
 		return finish("error", -1, "", err.Error())
 	}

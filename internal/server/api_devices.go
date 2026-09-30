@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 )
 
 const deviceCols = `d.id, d.client_id, d.site_id, c.name AS client_name, st.name AS site_name, d.hostname, d.display_name,

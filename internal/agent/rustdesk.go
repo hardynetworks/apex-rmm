@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 )
 
 const rustdeskWindows = `$ErrorActionPreference = 'Stop'

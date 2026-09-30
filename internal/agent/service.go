@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 	"github.com/kardianos/service"
 )
 
@@ -40,8 +40,8 @@ WantedBy=multi-user.target
 func serviceConfig() *service.Config {
 	return &service.Config{
 		Name:        ServiceName,
-		DisplayName: "Hardy RMM Agent",
-		Description: "Hardy RMM remote monitoring and management agent",
+		DisplayName: "Apex RMM Agent",
+		Description: "Apex RMM remote monitoring and management agent",
 		Executable:  InstallPath(),
 		Arguments:   []string{"service"},
 		Option: service.KeyValue{
@@ -116,6 +116,7 @@ func Install(server, token string, force bool) error {
 	if server == "" {
 		return errors.New("--server is required")
 	}
+	removeLegacyAgent()
 	// 1. copy binary
 	self, err := os.Executable()
 	if err != nil {
@@ -179,7 +180,7 @@ func Install(server, token string, force bool) error {
 	if err := s.Start(); err != nil {
 		return fmt.Errorf("start service: %w", err)
 	}
-	fmt.Println("Hardy RMM agent installed and running.")
+	fmt.Println("Apex RMM agent installed and running.")
 	return nil
 }
 
@@ -195,7 +196,7 @@ func Uninstall() error {
 	if runtime.GOOS != "windows" {
 		_ = os.Remove(InstallPath())
 	}
-	fmt.Println("Hardy RMM agent removed.")
+	fmt.Println("Apex RMM agent removed.")
 	return nil
 }
 

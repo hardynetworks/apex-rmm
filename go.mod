@@ -1,4 +1,4 @@
-module github.com/hardynetworks/hardy-rmm
+module github.com/hardynetworks/apex-rmm
 
 go 1.24.0
 

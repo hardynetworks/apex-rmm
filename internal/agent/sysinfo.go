@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"

@@ -1,4 +1,4 @@
--- Hardy RMM schema (applied idempotently at startup)
+-- Apex RMM schema (applied idempotently at startup)
 
 CREATE TABLE IF NOT EXISTS schema_version (version int PRIMARY KEY);
 

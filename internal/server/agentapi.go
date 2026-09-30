@@ -18,7 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 )
 
 var agentUpgrader = websocket.Upgrader{
@@ -222,7 +222,7 @@ func (s *Server) agentBinary(goos, arch string) (*binInfo, error) {
 	if !validPlatform(goos, arch) {
 		return nil, ErrNotFound
 	}
-	name := fmt.Sprintf("hardy-agent-%s-%s", goos, arch)
+	name := fmt.Sprintf("apex-agent-%s-%s", goos, arch)
 	if goos == "windows" {
 		name += ".exe"
 	}
@@ -281,7 +281,7 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, r *http.Request) {
 
 var installTemplates = map[string]*template.Template{
 	"linux.sh": template.Must(template.New("l").Parse(`#!/bin/sh
-# Hardy RMM agent installer for Linux
+# Apex RMM agent installer for Linux
 set -e
 SERVER="{{.URL}}"
 TOKEN="{{.Token}}"
@@ -292,15 +292,15 @@ case "$(uname -m)" in
   armv7l|armv6l) ARCH=arm ;;
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
-TMP="$(mktemp /tmp/hardy-agent.XXXXXX)"
-echo "Downloading Hardy RMM agent ($ARCH)..."
+TMP="$(mktemp /tmp/apex-agent.XXXXXX)"
+echo "Downloading Apex RMM agent ($ARCH)..."
 if command -v curl >/dev/null 2>&1; then curl -fsSL "$SERVER/download/agent/linux/$ARCH" -o "$TMP"; else wget -qO "$TMP" "$SERVER/download/agent/linux/$ARCH"; fi
 chmod +x "$TMP"
 "$TMP" install --server "$SERVER" --token "$TOKEN"
 rm -f "$TMP"
 `)),
 	"macos.sh": template.Must(template.New("m").Parse(`#!/bin/sh
-# Hardy RMM agent installer for macOS
+# Apex RMM agent installer for macOS
 set -e
 SERVER="{{.URL}}"
 TOKEN="{{.Token}}"
@@ -309,8 +309,8 @@ case "$(uname -m)" in
   arm64) ARCH=arm64 ;;
   *) ARCH=amd64 ;;
 esac
-TMP="$(mktemp /tmp/hardy-agent.XXXXXX)"
-echo "Downloading Hardy RMM agent ($ARCH)..."
+TMP="$(mktemp /tmp/apex-agent.XXXXXX)"
+echo "Downloading Apex RMM agent ($ARCH)..."
 curl -fsSL "$SERVER/download/agent/darwin/$ARCH" -o "$TMP"
 chmod +x "$TMP"
 xattr -d com.apple.quarantine "$TMP" 2>/dev/null || true
@@ -318,10 +318,10 @@ xattr -d com.apple.quarantine "$TMP" 2>/dev/null || true
 rm -f "$TMP"
 echo ""
 echo "For remote control, grant Screen Recording and Accessibility to"
-echo "  /usr/local/hardy-agent/hardy-agent"
+echo "  /usr/local/apex-agent/apex-agent"
 echo "in System Settings > Privacy & Security (or push a PPPC profile via MDM)."
 `)),
-	"windows.ps1": template.Must(template.New("w").Parse(`# Hardy RMM agent installer for Windows (run in an elevated PowerShell)
+	"windows.ps1": template.Must(template.New("w").Parse(`# Apex RMM agent installer for Windows (run in an elevated PowerShell)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -330,13 +330,13 @@ $Token = '{{.Token}}'
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Please run PowerShell as Administrator.' }
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
-$tmp = Join-Path $env:TEMP ('hardy-agent-setup-' + [guid]::NewGuid().ToString('N') + '.exe')
-Write-Host "Downloading Hardy RMM agent ($arch)..."
+$tmp = Join-Path $env:TEMP ('apex-agent-setup-' + [guid]::NewGuid().ToString('N') + '.exe')
+Write-Host "Downloading Apex RMM agent ($arch)..."
 Invoke-WebRequest -UseBasicParsing -Uri "$Server/download/agent/windows/$arch" -OutFile $tmp
 & $tmp install --server $Server --token $Token
 if ($LASTEXITCODE -ne 0) { throw "Agent install failed with exit code $LASTEXITCODE" }
 Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-Write-Host 'Hardy RMM agent installed.'
+Write-Host 'Apex RMM agent installed.'
 `)),
 }
 

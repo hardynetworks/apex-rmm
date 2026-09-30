@@ -65,7 +65,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.setupCode == "" || !constEq(strings.ToUpper(strings.TrimSpace(in.Code)), strings.ToUpper(s.setupCode)) {
 		s.audit(ctx, nil, r, "setup.bad_code", "system", "", nil)
-		writeErr(w, http.StatusForbidden, "wrong setup code - find it in the server log (docker compose logs hardy)")
+		writeErr(w, http.StatusForbidden, "wrong setup code - find it in the server log (docker compose logs apex)")
 		return
 	}
 	in.Email = strings.TrimSpace(in.Email)
@@ -106,7 +106,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	_ = s.reloadConfig(ctx)
 	// rename the default client created before setup
 	if ss.CompanyName != "" {
-		_, _ = s.db.Exec(ctx, `UPDATE clients SET name=$1 WHERE name='Hardy RMM' AND NOT EXISTS (SELECT 1 FROM clients WHERE name=$1)`, ss.CompanyName)
+		_, _ = s.db.Exec(ctx, `UPDATE clients SET name=$1 WHERE name='Apex RMM' AND NOT EXISTS (SELECT 1 FROM clients WHERE name=$1)`, ss.CompanyName)
 	}
 	s.setupCode = ""
 	if err := s.auth.startSession(w, r, uid, ""); err != nil {

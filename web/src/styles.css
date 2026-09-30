@@ -1,4 +1,4 @@
-/* Hardy RMM dashboard styles */
+/* Apex RMM dashboard styles */
 :root {
   color-scheme: light;
   --bg: #f4f6f9;
@@ -420,3 +420,41 @@ details[open] summary { margin-bottom: 8px; }
 .steps { display: flex; gap: 6px; justify-content: center; margin-bottom: 4px; }
 .steps span { width: 28px; height: 4px; border-radius: 2px; background: var(--border-strong); }
 .steps span.on { background: var(--accent); }
+
+/* remote control: touch devices */
+.rd { height: 100vh; height: 100dvh; }
+.rd-stage.touch { overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+.rd-stage.touch canvas { will-change: transform; }
+.rd-cursor { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 5; margin: -2px 0 0 -4px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+.rd-cursor path { fill: #fff; stroke: #0f172a; stroke-width: 1.5; stroke-linejoin: round; }
+.rd-kbd-input { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; border: 0; padding: 0; resize: none; pointer-events: none; }
+.rd-touchbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: #0f172a; border-top: 1px solid #1e293b; overflow-x: auto; }
+.rd-touchbar button { font: inherit; color: #e2e8f0; background: #1e293b; border: 1px solid #334155; border-radius: 10px; min-height: 42px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; flex: none; }
+.rd-touchbar button.on { background: var(--accent, #3b82f6); border-color: transparent; color: #fff; }
+.rd-seg { display: inline-flex; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 2px; flex: none; }
+.rd-seg button { border: 0; background: transparent; min-height: 36px; padding: 0 10px; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; border-radius: 8px; }
+.rd-mbtn { flex: 1 1 64px !important; min-width: 64px; font-weight: 600; font-size: 14px; }
+.rd-tbtn { width: 46px; display: grid; place-items: center; }
+.rd-fn { font-size: 12px; font-weight: 700; max-width: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-finger { width: 11px; height: 11px; border-radius: 50%; border: 2px solid currentColor; display: inline-block; }
+.rd-keys { background: #0b1222; border-top: 1px solid #1e293b; padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
+.rd-keys-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.rd-key { flex: none; font: inherit; font-size: 13.5px; color: #e2e8f0; background: #1e293b; border: 1px solid #334155; border-radius: 8px; min-width: 44px; min-height: 38px; padding: 0 10px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.rd-key:active { background: #334155; }
+.rd-key.mod.on { background: var(--accent, #3b82f6); border-color: transparent; color: #fff; }
+.rd-help { position: fixed; inset: 0; background: rgba(2,6,23,.7); display: grid; place-items: center; z-index: 20; padding: 16px; }
+.rd-help-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 18px; max-width: 380px; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.rd-help-card table { border-collapse: collapse; font-size: 14px; }
+.rd-help-card td { padding: 6px 0; border-bottom: 1px solid #1e293b; vertical-align: top; }
+.rd-help-card td:first-child { color: #94a3b8; padding-right: 14px; white-space: nowrap; }
+.rd-help-card p { margin: 0; color: #a8b3c7; font-size: 13px; line-height: 1.5; }
+@media (pointer: coarse) {
+  .rd-bar { padding: 6px 8px; gap: 6px; }
+  .rd-title .muted { display: none; }
+}
+@media (max-width: 520px) {
+  .rd-seg-label { display: none; }
+  .rd-seg button { padding: 0 12px; }
+  .rd-touchbar { gap: 5px; padding-left: 8px; padding-right: 8px; }
+  .rd-mbtn { min-width: 0; }
+}

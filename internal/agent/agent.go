@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 	"github.com/shirou/gopsutil/v4/process"
 )
 
@@ -79,7 +79,7 @@ func (a *Agent) Run(ctx context.Context) {
 
 func (a *Agent) session(ctx context.Context) error {
 	d := websocket.Dialer{Proxy: http.ProxyFromEnvironment, HandshakeTimeout: 20 * time.Second, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
-	h := http.Header{"Authorization": {"Bearer " + a.cfg.DeviceID + "." + a.cfg.Secret}, "User-Agent": {"hardy-agent/" + proto.Version}}
+	h := http.Header{"Authorization": {"Bearer " + a.cfg.DeviceID + "." + a.cfg.Secret}, "User-Agent": {"apex-agent/" + proto.Version}}
 	ws, resp, err := d.DialContext(ctx, wsURL(a.cfg.Server)+"/api/agent/ws", h)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {

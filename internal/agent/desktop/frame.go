@@ -1,4 +1,4 @@
-// Package desktop implements Hardy RMM's built-in remote desktop: screen
+// Package desktop implements Apex RMM's built-in remote desktop: screen
 // capture, dirty-tile JPEG encoding and input injection for Windows, macOS and Linux (X11).
 package desktop
 

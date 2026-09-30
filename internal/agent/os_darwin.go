@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 )
 
 var ioregSerial = regexp.MustCompile(`"IOPlatformSerialNumber" = "([^"]+)"`)

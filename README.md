@@ -1,4 +1,4 @@
-# Hardy RMM
+# Apex RMM
 
 A self-hosted Remote Monitoring & Management platform that runs in Docker, signs users in through **Authentik SSO**, and manages **Windows, macOS and Linux** machines with a lightweight Go agent.
 
@@ -20,7 +20,7 @@ A self-hosted Remote Monitoring & Management platform that runs in Docker, signs
  Browser ──HTTPS/WSS──┐                         ┌── hbbs / hbbr (RustDesk server, ports 21115-21119)
                       ▼                         │
               ┌──────────────────┐              │
-              │   hardy-server   │  Postgres    │
+              │   apex-server   │  Postgres    │
               │  Go API + React  │◄──────────►  db
               │  dashboard + hub │
               └──────────────────┘
@@ -28,7 +28,7 @@ A self-hosted Remote Monitoring & Management platform that runs in Docker, signs
     WSS control  │            │  WSS screen stream (per session)
                  │            │
         ┌────────┴───┐   ┌────┴──────────────┐
-        │ hardy-agent│──►│ hardy-agent       │   spawned in the logged-in user's
+        │ apex-agent│──►│ apex-agent       │   spawned in the logged-in user's
         │ (service)  │   │ desktop helper    │   session (SYSTEM on Windows)
         └────────────┘   └───────────────────┘
 ```
@@ -51,7 +51,7 @@ Open/forward TCP **21115-21119** and UDP **21116** to the host for RustDesk.
 ### 2. Start it
 
 ```bash
-git clone https://github.com/hardynetworks/hardy-rmm.git && cd hardy-rmm
+git clone https://github.com/hardynetworks/apex-rmm.git && cd apex-rmm
 docker compose up -d --build
 ```
 
@@ -62,7 +62,7 @@ No config file is needed. The first build cross-compiles the agent for all 7 pla
 Open `http://<your-server>:8080`. The wizard asks for a **setup code** (proof that you own the server), which is printed in the log:
 
 ```bash
-docker compose logs hardy | grep "setup code"
+docker compose logs apex | grep "setup code"
 ```
 
 It then asks for your company name and public URL and creates your first admin account (a local login that keeps working even if SSO is down).
@@ -80,7 +80,7 @@ Everything else is set in the dashboard, and changes apply immediately without a
 
 * **Nginx Proxy Manager:** new proxy host → `http://<host>:8080`, enable *Websockets Support*, request an SSL cert.
 * **Traefik:** a normal HTTP router works; Traefik proxies WebSockets automatically.
-* **No proxy yet?** `docker compose --profile caddy up -d` runs Caddy with automatic Let's Encrypt for `HARDY_DOMAIN` (set it in `.env`).
+* **No proxy yet?** `docker compose --profile caddy up -d` runs Caddy with automatic Let's Encrypt for `APEX_DOMAIN` (set it in `.env`).
 
 Once HTTPS works, update **Public URL** in Settings to the `https://` address before deploying agents.
 
@@ -99,9 +99,9 @@ curl -fsSL https://rmm.example.com/install/<token>/macos.sh | sudo sh
 curl -fsSL https://rmm.example.com/install/<token>/linux.sh | sudo sh
 ```
 
-The agent installs as a service (`Hardy RMM Agent` on Windows, systemd/SysV/OpenRC on Linux, a LaunchDaemon on macOS) and appears on the dashboard within seconds.
+The agent installs as a service (`Apex RMM Agent` on Windows, systemd/SysV/OpenRC on Linux, a LaunchDaemon on macOS) and appears on the dashboard within seconds.
 
-Manual install: download `/download/agent/<os>/<arch>` and run `hardy-agent install --server https://rmm.example.com --token <token>`. Uninstall with `hardy-agent uninstall`, or delete the device in the dashboard (the agent removes itself).
+Manual install: download `/download/agent/<os>/<arch>` and run `apex-agent install --server https://rmm.example.com --token <token>`. Uninstall with `apex-agent uninstall`, or delete the device in the dashboard (the agent removes itself).
 
 ## Remote control
 
@@ -110,10 +110,28 @@ Click **Remote control** on a device. A pop-up viewer opens and the agent launch
 | OS | How it works | Requirements |
 |---|---|---|
 | **Windows 10/11, Server 2016+** | Helper runs as SYSTEM in the active console (or RDP) session and follows the input desktop, so the **lock screen, sign-in screen and UAC prompts** are visible and controllable. GDI capture, `SendInput` with scan codes. Ctrl+Alt+Del via `SendSAS` (the installer enables the `SoftwareSASGeneration` policy). | none |
-| **macOS 12+** | Helper runs in the console user's GUI session via `launchctl asuser`, CoreGraphics capture and `CGEvent` input (via purego, no cgo). | Grant **Screen Recording** and **Accessibility** to `/usr/local/hardy-agent/hardy-agent` in System Settings → Privacy & Security, or push a PPPC profile with your MDM. Because the binary is unsigned, re-approve after an agent update (or sign it with your Developer ID). |
+| **macOS 12+** | Helper runs in the console user's GUI session via `launchctl asuser`, CoreGraphics capture and `CGEvent` input (via purego, no cgo). | Grant **Screen Recording** and **Accessibility** to `/usr/local/apex-agent/apex-agent` in System Settings → Privacy & Security, or push a PPPC profile with your MDM. Because the binary is unsigned, re-approve after an agent update (or sign it with your Developer ID). |
 | **Linux** | Finds the running Xorg server and its auth cookie, captures with X11 `GetImage`, injects input with XTEST. Works on the login screen too. | An **Xorg** session. Wayland isn't supported by the built-in viewer — pick "Ubuntu on Xorg" at login, set `WaylandEnable=false` in `/etc/gdm3/custom.conf`, or use RustDesk. |
 
 Viewer features: multi-monitor switching, quality presets (bandwidth-adaptive with flow control), fit / 1:1 scaling, paste-as-keystrokes, Ctrl+Alt+Del, full screen, live fps/bitrate. Every session is written to the audit log.
+
+### On a phone or tablet
+
+The viewer switches to touch controls automatically, with a bar at the bottom of the screen:
+
+| | Trackpad mode (default) | Touch mode |
+|---|---|---|
+| Move the mouse | Drag one finger (moves an on-screen cursor) | Tap where you want it |
+| Left click | Tap anywhere | Tap |
+| Right click | Two-finger tap | Long press or two-finger tap |
+| Drag | Double-tap and drag, or long press then drag | Touch and drag |
+| Scroll | Two-finger drag | Two-finger drag |
+| Zoom | Pinch (tap **1×** to reset) | Pinch |
+
+* **Left / Right** buttons click at the cursor. Hold **Left** and drag with another finger to drag windows or select text.
+* **Keyboard** opens the phone's keyboard; text is typed on the remote device (works with autocorrect and swipe typing).
+* **Fn** opens a key row: Esc, Tab, arrows, Home/End, PgUp/PgDn, Del, F1–F12, Ctrl+Alt+Del, and sticky **Ctrl / Alt / Shift / Win** (tap Ctrl, then type `c` for Ctrl+C).
+* Tap **?** in the top bar for a gesture cheat sheet. The mode you pick is remembered on that device.
 
 ### RustDesk (backup)
 
@@ -143,36 +161,43 @@ Most settings live in **Settings → General** and are stored in the database (t
 | `OIDC_DEFAULT_ROLE` | Settings or env | Role for users in none of the groups (empty = deny) |
 | `RUSTDESK_HOST`, `RUSTDESK_RELAY`, `RUSTDESK_KEY` | Settings or env | RustDesk server details (key auto-detected from the hbbs volume) |
 | `LOCAL_ADMIN_EMAIL`, `LOCAL_ADMIN_PASSWORD` | env only | Extra break-glass admin; also skips the setup wizard |
-| `HARDY_BIND` | env only | Published port, default `8080` (use `127.0.0.1:8080` behind a local proxy) |
+| `APEX_BIND` | env only | Published port, default `8080` (use `127.0.0.1:8080` behind a local proxy) |
 | `METRICS_RETENTION_DAYS`, `SESSION_HOURS`, `TRUST_PROXY` | env only | History kept (14), session length (12 h), trust `X-Forwarded-For` (true) |
 | `DATABASE_URL` or `DB_HOST`/`DB_PASSWORD_FILE` | set by compose | Postgres connection |
 
+## Upgrading from Hardy RMM
+
+This project was called Hardy RMM before. The rename changed the agent's service name and install folders and the Docker volume names, so an existing install starts fresh:
+
+1. Stop the old stack (`docker compose down` in the old folder), then clone this repo and `docker compose up -d --build` as in the quick start. The old `hardy-rmm_*` volumes are left untouched; delete them with `docker volume rm` once you don't need them.
+2. Re-deploy agents with a new install link. The new installer removes the old `hardy-agent` service and folders automatically before installing `apex-agent`.
+
 ## Operations
 
-* **Backups:** back up the `db` volume (`docker compose exec db pg_dump -U hardy hardy > backup.sql`), the `secrets` volume (database password and the key that decrypts stored secrets) and the `rustdesk` volume (RustDesk key pair).
+* **Backups:** back up the `db` volume (`docker compose exec db pg_dump -U apex apex > backup.sql`), the `secrets` volume (database password and the key that decrypts stored secrets) and the `rustdesk` volume (RustDesk key pair).
 * **Upgrades:** `git pull && docker compose up -d --build`. Agents check every 6 hours and self-update to the binary the server ships (or use **⋯ → Update agent**).
-* **Logs:** `docker compose logs -f hardy`.
+* **Logs:** `docker compose logs -f apex`.
 * **Health:** `GET /healthz`.
 
 ## Development
 
 ```bash
 # backend
-export DATABASE_URL=postgres://hardy:hardy@localhost:5432/hardy?sslmode=disable
+export DATABASE_URL=postgres://apex:apex@localhost:5432/apex?sslmode=disable
 export PUBLIC_URL=http://localhost:8080 LOCAL_ADMIN_PASSWORD=dev WEB_DIR=web/dist AGENT_DIR=dist/agents
-make agents server && ./dist/hardy-server
+make agents server && ./dist/apex-server
 
 # dashboard (Preact + TypeScript, bundled with esbuild)
 cd web && npm install && npm run watch   # or npm run build
 ```
 
-`web/dist` is committed so the Docker build doesn't need Node unless you change the UI (delete `web/dist` to force a rebuild in Docker).
+The Docker build compiles the dashboard itself (`web/dist` isn't committed).
 
 Project layout:
 
 ```
-cmd/hardy-server      server entry point
-cmd/hardy-agent       agent entry point (install / service / desktop helper)
+cmd/apex-server      server entry point
+cmd/apex-agent       agent entry point (install / service / desktop helper)
 internal/server       API, OIDC, agent hub, alert engine, scheduler, installers, schema.sql
 internal/agent        agent core, inventory/metrics, scripts, PTY, services, RustDesk, self-update
 internal/agent/desktop  remote desktop: capture + input per OS, tile encoder

@@ -201,7 +201,7 @@ export function TicketPage({ id }: { id: string }) {
             ]} />
             {t.device_id && tech && (
               <div class="stack mt">
-                <Button icon="pointer" disabled={!t.device_online} onClick={() => window.open(`/devices/${t.device_id}/remote`, 'hardy-rd-' + t.device_id, 'popup,width=1400,height=900')}>Remote control</Button>
+                <Button icon="pointer" disabled={!t.device_online} onClick={() => window.open(`/devices/${t.device_id}/remote`, 'apex-rd-' + t.device_id, 'popup,width=1400,height=900')}>Remote control</Button>
                 <Link href={`/devices/${t.device_id}?tab=terminal`} class="btn btn-default btn-md"><Icon name="terminal" /><span>Open terminal</span></Link>
               </div>
             )}

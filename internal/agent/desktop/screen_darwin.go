@@ -139,7 +139,7 @@ func openScreen() (Screen, error) {
 		if cgRequestCapture != nil {
 			cgRequestCapture()
 		}
-		s.warning = "Screen Recording permission is not granted to the Hardy agent. Approve it in System Settings > Privacy & Security > Screen Recording (and Accessibility for control)."
+		s.warning = "Screen Recording permission is not granted to the Apex agent. Approve it in System Settings > Privacy & Security > Screen Recording (and Accessibility for control)."
 	}
 	s.loadDisplays()
 	if len(s.displays) == 0 {
@@ -220,7 +220,7 @@ func (s *macScreen) Capture() (*Frame, error) {
 
 // captureCLI is a slow fallback using /usr/sbin/screencapture.
 func (s *macScreen) captureCLI() (*Frame, error) {
-	tmp := filepath.Join(os.TempDir(), "hardy-cap.png")
+	tmp := filepath.Join(os.TempDir(), "apex-cap.png")
 	defer os.Remove(tmp)
 	if err := exec.Command("/usr/sbin/screencapture", "-x", "-C", "-D", fmt.Sprint(s.cur+1), "-t", "png", tmp).Run(); err != nil {
 		return nil, err

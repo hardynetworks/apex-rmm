@@ -1,4 +1,4 @@
-// Package agent implements the Hardy RMM endpoint agent.
+// Package agent implements the Apex RMM endpoint agent.
 package agent
 
 import (
@@ -16,7 +16,7 @@ type Config struct {
 }
 
 // ServiceName is the OS service name.
-const ServiceName = "hardy-agent"
+const ServiceName = "apex-agent"
 
 // InstallPath is where the agent binary lives once installed.
 func InstallPath() string {
@@ -26,11 +26,11 @@ func InstallPath() string {
 		if pf == "" {
 			pf = `C:\Program Files`
 		}
-		return filepath.Join(pf, "HardyRMM", "hardy-agent.exe")
+		return filepath.Join(pf, "ApexRMM", "apex-agent.exe")
 	case "darwin":
-		return "/usr/local/hardy-agent/hardy-agent"
+		return "/usr/local/apex-agent/apex-agent"
 	default:
-		return "/usr/local/bin/hardy-agent"
+		return "/usr/local/bin/apex-agent"
 	}
 }
 
@@ -42,11 +42,11 @@ func ConfigPath() string {
 		if pd == "" {
 			pd = `C:\ProgramData`
 		}
-		return filepath.Join(pd, "HardyRMM", "agent.json")
+		return filepath.Join(pd, "ApexRMM", "agent.json")
 	case "darwin":
-		return "/Library/Application Support/HardyRMM/agent.json"
+		return "/Library/Application Support/ApexRMM/agent.json"
 	default:
-		return "/etc/hardy-agent/agent.json"
+		return "/etc/apex-agent/agent.json"
 	}
 }
 

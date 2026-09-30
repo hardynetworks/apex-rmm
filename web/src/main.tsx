@@ -35,7 +35,7 @@ function useTheme(): [string, () => void] {
   const toggle = () => {
     const t = theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = t;
-    try { localStorage.setItem('hardy-theme', t); } catch {}
+    try { localStorage.setItem('apex-theme', t); } catch {}
     setTheme(t);
   };
   return [theme, toggle];
@@ -45,9 +45,9 @@ function Shell({ user, children, path }: { user: User; children: ComponentChildr
   const [theme, toggleTheme] = useTheme();
   const [counts, setCounts] = useState<{ alerts: number; tickets: number }>({ alerts: 0, tickets: 0 });
   const [open, setOpen] = useState(false);
-  const [company, setCompany] = useState('Hardy RMM');
+  const [company, setCompany] = useState('Apex RMM');
   useEffect(() => {
-    api.get('/auth/config').then((c) => setCompany(c.company || 'Hardy RMM')).catch(() => {});
+    api.get('/auth/config').then((c) => setCompany(c.company || 'Apex RMM')).catch(() => {});
     const load = () => api.get('/dashboard').then((d) => setCounts({ alerts: d.alerts?.open || 0, tickets: d.tickets?.open || 0 })).catch(() => {});
     load();
     const t = setInterval(load, 30000);
@@ -63,7 +63,7 @@ function Shell({ user, children, path }: { user: User; children: ComponentChildr
     <div class={'shell ' + (open ? 'nav-open' : '')}>
       <aside class="sidebar">
         <div class="brand">
-          <div class="logo"><svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M9 8v16M23 8v16M9 16h14" stroke="#fff" stroke-width="3.2" stroke-linecap="round" /></svg></div>
+          <div class="logo"><svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M8.5 24L16 8l7.5 16M11.6 18.5h8.8" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div>
             <strong>{company}</strong>
             <small>Remote Management</small>

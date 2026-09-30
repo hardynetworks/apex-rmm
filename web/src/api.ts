@@ -1,4 +1,4 @@
-// Thin fetch wrapper for the Hardy RMM API.
+// Thin fetch wrapper for the Apex RMM API.
 
 export class ApiError extends Error {
   status: number;
@@ -12,7 +12,7 @@ async function request<T = any>(method: string, path: string, body?: unknown): P
   const res = await fetch('/api' + path, {
     method,
     credentials: 'same-origin',
-    headers: body !== undefined ? { 'Content-Type': 'application/json', 'X-Hardy-CSRF': '1' } : { 'X-Hardy-CSRF': '1' },
+    headers: body !== undefined ? { 'Content-Type': 'application/json', 'X-Apex-CSRF': '1' } : { 'X-Apex-CSRF': '1' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401 && !path.startsWith('/auth/')) {

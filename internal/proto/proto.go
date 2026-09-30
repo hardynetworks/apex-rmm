@@ -1,10 +1,10 @@
-// Package proto defines the messages exchanged between the Hardy RMM server and agents.
+// Package proto defines the messages exchanged between the Apex RMM server and agents.
 package proto
 
 import "encoding/json"
 
 // Version is the protocol/agent version string. It is overridden at build time
-// with -ldflags "-X github.com/hardynetworks/hardy-rmm/internal/proto.Version=..."
+// with -ldflags "-X github.com/hardynetworks/apex-rmm/internal/proto.Version=..."
 var Version = "0.1.0"
 
 // Envelope wraps every JSON message on the agent control WebSocket.

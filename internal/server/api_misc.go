@@ -316,7 +316,7 @@ func (s *Server) testWebhook(w http.ResponseWriter, r *http.Request) {
 		fail(w, badRequest("no webhook URL configured"))
 		return
 	}
-	if err := s.notify(r.Context(), st, "info", "Hardy RMM test notification", "If you can read this, alert notifications are working."); err != nil {
+	if err := s.notify(r.Context(), st, "info", "Apex RMM test notification", "If you can read this, alert notifications are working."); err != nil {
 		fail(w, badRequest("webhook failed: "+err.Error()))
 		return
 	}

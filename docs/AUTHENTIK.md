@@ -1,6 +1,6 @@
 # Authentik SSO setup
 
-Hardy RMM uses standard OpenID Connect (authorization code + PKCE). These steps are for Authentik 2024.x/2025.x; menu names may differ slightly in newer versions.
+Apex RMM uses standard OpenID Connect (authorization code + PKCE). These steps are for Authentik 2024.x/2025.x; menu names may differ slightly in newer versions.
 
 ## 1. Groups
 
@@ -18,10 +18,10 @@ Add your users to the right group. The names must match the group fields in Sett
 
 | Field | Value |
 |---|---|
-| Name | `Hardy RMM` |
+| Name | `Apex RMM` |
 | Authorization flow | `default-provider-authorization-implicit-consent` |
 | Client type | **Confidential** |
-| Redirect URIs | `Strict` – `https://<your-hardy-rmm-host>/auth/callback` (copy it from Settings → General) |
+| Redirect URIs | `Strict` – `https://<your-apex-rmm-host>/auth/callback` (copy it from Settings → General) |
 | Signing key | `authentik Self-signed Certificate` (**required** – RS256) |
 | Scopes (advanced) | `openid`, `email`, `profile` (the default *profile* mapping includes the `groups` claim) |
 | Subject mode | Based on the User's hashed ID (default) |
@@ -36,19 +36,19 @@ Copy the **Client ID** and **Client Secret**.
 
 | Field | Value |
 |---|---|
-| Name | `Hardy RMM` |
-| Slug | `hardy-rmm` |
-| Provider | `Hardy RMM` |
-| Launch URL | `https://<your-hardy-rmm-host>/` |
+| Name | `Apex RMM` |
+| Slug | `apex-rmm` |
+| Provider | `Apex RMM` |
+| Launch URL | `https://<your-apex-rmm-host>/` |
 
-Optionally bind a policy so only the RMM groups can see the app (Hardy RMM also refuses users who are in none of the groups unless "Users in no group" is set to a role).
+Optionally bind a policy so only the RMM groups can see the app (Apex RMM also refuses users who are in none of the groups unless "Users in no group" is set to a role).
 
-## 4. Hardy RMM
+## 4. Apex RMM
 
 Sign in with your local admin account and open **Settings → General → Single sign-on**:
 
 1. Copy the **Redirect URI** shown there into the provider from step 2, if you haven't already.
-2. **Issuer URL:** `https://<your-authentik-host>/application/o/hardy-rmm/`. Authentik shows it as *OpenID Configuration Issuer* on the provider page. Click **Test** to confirm Hardy RMM can reach it.
+2. **Issuer URL:** `https://<your-authentik-host>/application/o/apex-rmm/`. Authentik shows it as *OpenID Configuration Issuer* on the provider page. Click **Test** to confirm Apex RMM can reach it.
 3. **Client ID** and **Client secret** from step 2.
 4. Group names for admin / technician / viewer, if yours differ from the defaults.
 5. **Save settings.** The badge turns **Active** and a *Sign in with single sign-on* button appears on the login page; no restart is needed.
@@ -59,7 +59,7 @@ Prefer config files? The same values can be set as `OIDC_ISSUER`, `OIDC_CLIENT_I
 
 ## Sign-out
 
-Sign-out from Hardy RMM also ends the Authentik session (RP-initiated logout via the provider's end-session endpoint) and returns to the login page.
+Sign-out from Apex RMM also ends the Authentik session (RP-initiated logout via the provider's end-session endpoint) and returns to the login page.
 
 ## Troubleshooting
 

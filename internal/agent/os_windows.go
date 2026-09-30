@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 	"github.com/shirou/gopsutil/v4/process"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
@@ -172,7 +172,7 @@ func powerAction(action string, delay int) error {
 	if action == "shutdown" {
 		arg = "/s"
 	}
-	cmd := exec.Command("shutdown.exe", arg, "/f", "/t", fmt.Sprint(delay), "/c", "Hardy RMM: "+action+" requested by administrator")
+	cmd := exec.Command("shutdown.exe", arg, "/f", "/t", fmt.Sprint(delay), "/c", "Apex RMM: "+action+" requested by administrator")
 	hideWindow(cmd)
 	return cmd.Start()
 }

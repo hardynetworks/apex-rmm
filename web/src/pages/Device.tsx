@@ -31,7 +31,7 @@ export function DevicePage({ id }: { id: string }) {
   if (!d) return <div class="page"><Spinner /></div>;
 
   const openRemote = () => {
-    window.open(`/devices/${id}/remote`, 'hardy-rd-' + id, 'popup,width=1400,height=900');
+    window.open(`/devices/${id}/remote`, 'apex-rd-' + id, 'popup,width=1400,height=900');
   };
   const power = async (action: string) => {
     if (!(await confirmDialog({ title: `${action === 'reboot' ? 'Restart' : 'Shut down'} ${deviceName(d)}?`, body: 'Unsaved work on the device may be lost.', confirm: action === 'reboot' ? 'Restart' : 'Shut down', danger: true }))) return;

@@ -83,7 +83,7 @@ func InitSecrets(dir string) error {
 			fmt.Printf("%s already exists\n", p)
 			continue
 		}
-		// readable by the postgres and hardy containers (which share only this volume)
+		// readable by the postgres and apex containers (which share only this volume)
 		if err := os.WriteFile(p, []byte(randToken(32)+"\n"), 0o644); err != nil {
 			return err
 		}

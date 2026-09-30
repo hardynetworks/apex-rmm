@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 )
 
 func readTrim(p string) string {

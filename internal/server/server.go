@@ -18,7 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Server is the Hardy RMM API + dashboard server.
+// Server is the Apex RMM API + dashboard server.
 type Server struct {
 	base      *Config                // environment
 	cfgp      atomic.Pointer[Config] // effective (environment + Settings)
@@ -49,7 +49,7 @@ func New(ctx context.Context, cfg *Config) (*Server, error) {
 	if s.setupNeeded(ctx) {
 		s.setupCode = strings.ToUpper(randPassword(8))
 		fmt.Printf("\n==============================================================\n"+
-			"  Hardy RMM is not set up yet. Open the dashboard in a browser\n"+
+			"  Apex RMM is not set up yet. Open the dashboard in a browser\n"+
 			"  and enter this setup code:\n\n"+
 			"      setup code: %s\n"+
 			"==============================================================\n\n", s.setupCode)
@@ -73,7 +73,7 @@ func (s *Server) Run(ctx context.Context) error {
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}()
-	slog.Info("Hardy RMM listening", "addr", s.conf().Listen, "public_url", s.conf().PublicURL, "sso", s.conf().OIDCEnabled())
+	slog.Info("Apex RMM listening", "addr", s.conf().Listen, "public_url", s.conf().PublicURL, "sso", s.conf().OIDCEnabled())
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

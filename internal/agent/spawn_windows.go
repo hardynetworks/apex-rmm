@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"unsafe"
 
-	"github.com/hardynetworks/hardy-rmm/internal/proto"
+	"github.com/hardynetworks/apex-rmm/internal/proto"
 	"golang.org/x/sys/windows"
 )
 

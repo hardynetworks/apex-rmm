@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/upload-artifact@v5
         with:
-          name: hardy-agents
+          name: apex-agents
           path: dist/agents/
           retention-days: 7
 
@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Build and start the stack
-        run: docker compose up -d --build hardy
+        run: docker compose up -d --build apex
 
       - name: Wait for the server to be healthy
         run: |
@@ -82,7 +82,7 @@ jobs:
           curl -fsS http://localhost:8080/api/setup | tee /tmp/setup.json; echo
           grep -q '"needed":true' /tmp/setup.json
           echo "--- setup code printed in log"
-          docker compose logs hardy | grep -i "setup code"
+          docker compose logs apex | grep -i "setup code"
           echo "--- dashboard"
           curl -fsS http://localhost:8080/ | grep -qi "<div id=\"app\"\|<script"
           echo "--- agent binaries"

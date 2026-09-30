@@ -106,9 +106,9 @@ function SystemSettings() {
             <Field label="Redirect URI" hint="Paste this into the Authentik provider (Redirect URIs, strict).">
               <CopyText text={origin + '/auth/callback'} />
             </Field>
-            <Field label="Issuer URL" hint={hint('oidc_issuer', `In Authentik: the provider's "OpenID Configuration Issuer", e.g. https://auth.example.com/application/o/hardy-rmm/`)}>
+            <Field label="Issuer URL" hint={hint('oidc_issuer', `In Authentik: the provider's "OpenID Configuration Issuer", e.g. https://auth.example.com/application/o/apex-rmm/`)}>
               <div class="inline" style="margin-top:0">
-                {input('oidc_issuer', { placeholder: 'https://auth.example.com/application/o/hardy-rmm/' })}
+                {input('oidc_issuer', { placeholder: 'https://auth.example.com/application/o/apex-rmm/' })}
                 <Button onClick={runTest} loading={testing} disabled={!v.oidc_issuer}>Test</Button>
               </div>
             </Field>

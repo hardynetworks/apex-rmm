@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, wsUrl } from '../api';
 import { Icon } from '../icons';
 import { Button, Modal, deviceName, useFetch } from '../ui';
+import { TouchControls, TouchHelp, TouchMode, isTouchDevice, loadTouchMode } from './RemoteTouch';
 
 type Display = { name: string; w: number; h: number; primary: boolean };
 
@@ -14,6 +15,10 @@ const QUALITY: Record<string, { q: number; s: number; fps: number }> = {
 export function RemoteDesktop({ id }: { id: string }) {
   const dev = useFetch<any>('/devices/' + id);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const touch = useRef(isTouchDevice()).current;
+  const [touchMode, setTouchMode] = useState<TouchMode>(loadTouchMode);
+  const [help, setHelp] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const size = useRef({ w: 0, h: 0 });
   const [status, setStatus] = useState<'starting' | 'connecting' | 'live' | 'ended'>('starting');
@@ -23,6 +28,7 @@ export function RemoteDesktop({ id }: { id: string }) {
   const [display, setDisplay] = useState(0);
   const [quality, setQuality] = useState('balanced');
   const [fit, setFit] = useState(true);
+  const fitMode = touch || fit;
   const [stats, setStats] = useState({ fps: 0, kbps: 0 });
   const [paste, setPaste] = useState(false);
   const [gen, setGen] = useState(0);
@@ -189,6 +195,13 @@ export function RemoteDesktop({ id }: { id: string }) {
     };
   }, [status]);
 
+  useEffect(() => {
+    if (!touch || status !== 'live') return;
+    try {
+      if (!localStorage.getItem('apex-rd-touch-help')) { setHelp(true); localStorage.setItem('apex-rd-touch-help', '1'); }
+    } catch {}
+  }, [status]);
+
   const setQ = (q: string) => {
     setQuality(q);
     send({ t: 'opt', ...QUALITY[q] });
@@ -223,9 +236,10 @@ export function RemoteDesktop({ id }: { id: string }) {
             <option value="balanced">Balanced</option>
             <option value="high">High quality</option>
           </select>
-          <Button size="sm" variant="ghost" icon={fit ? 'maximize' : 'devices'} onClick={() => setFit(!fit)}>{fit ? 'Fit' : '1:1'}</Button>
-          <Button size="sm" variant="ghost" icon="keyboard" onClick={() => send({ t: 'cad' })} title="Send Ctrl+Alt+Del">Ctrl+Alt+Del</Button>
-          <Button size="sm" variant="ghost" icon="copy" onClick={() => setPaste(true)} title="Type text on the remote device">Paste text</Button>
+          {!touch && <Button size="sm" variant="ghost" icon={fit ? 'maximize' : 'devices'} onClick={() => setFit(!fit)}>{fit ? 'Fit' : '1:1'}</Button>}
+          {!touch && <Button size="sm" variant="ghost" icon="keyboard" onClick={() => send({ t: 'cad' })} title="Send Ctrl+Alt+Del">Ctrl+Alt+Del</Button>}
+          <Button size="sm" variant="ghost" icon="copy" onClick={() => setPaste(true)} title="Type text on the remote device">{touch ? '' : 'Paste text'}</Button>
+          {touch && <Button size="sm" variant="ghost" onClick={() => setHelp(true)} title="Touch gestures">?</Button>}
           <Button size="sm" variant="ghost" icon="refresh" onClick={() => send({ t: 'refresh' })} title="Refresh screen" />
           <Button size="sm" variant="ghost" icon="maximize" onClick={fullscreen} title="Full screen" />
           {status === 'ended'
@@ -234,7 +248,7 @@ export function RemoteDesktop({ id }: { id: string }) {
         </div>
       </header>
       {warning && <div class="rd-warn"><Icon name="alert" size={16} /> {warning}</div>}
-      <div class={'rd-stage ' + (fit ? 'fit' : 'actual')}>
+      <div ref={stage} class={'rd-stage ' + (fitMode ? 'fit' : 'actual') + (touch ? ' touch' : '')}>
         <canvas ref={canvas} tabIndex={0} class={status === 'live' ? '' : 'hidden'} />
         {status !== 'live' && (
           <div class="rd-overlay">
@@ -254,6 +268,10 @@ export function RemoteDesktop({ id }: { id: string }) {
           </div>
         )}
       </div>
+      {touch && status === 'live' && (
+        <TouchControls stage={stage} canvas={canvas} send={send} mode={touchMode} setMode={setTouchMode} onCad={() => send({ t: 'cad' })} />
+      )}
+      {help && <TouchHelp mode={touchMode} onClose={() => setHelp(false)} />}
       {paste && <PasteModal onClose={() => setPaste(false)} onSend={(t) => { send({ t: 'type', text: t }); setPaste(false); canvas.current?.focus(); }} />}
     </div>
   );
