@@ -1,0 +1,44 @@
+name: Desktop app
+
+# Builds the Windows desktop app and installer (unsigned) on every change to desktop/.
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Build Windows app + installer
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+
+      - name: Vet
+        run: |
+          go vet ./...
+          $env:GOARCH = "arm64"; go vet ./...
+
+      - name: Build
+        run: ./build.ps1 -Version "0.0.${{ github.run_number }}"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: apex-desktop-unsigned
+          path: |
+            desktop/dist/ApexRMM-Desktop-Setup-*.exe
+            desktop/dist/ApexRMM-*.exe
+          retention-days: 14

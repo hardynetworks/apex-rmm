@@ -458,3 +458,6 @@ details[open] summary { margin-bottom: 8px; }
   .rd-touchbar { gap: 5px; padding-left: 8px; padding-right: 8px; }
   .rd-mbtn { min-width: 0; }
 }
+
+/* desktop app: keyboard-capture toggle in the remote viewer */
+.rd-tools .btn.rd-capture.on { color: #93c5fd; }

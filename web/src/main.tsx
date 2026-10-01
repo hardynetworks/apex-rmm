@@ -19,6 +19,7 @@ import { Tickets, TicketPage } from './pages/Tickets';
 import { Clients } from './pages/Clients';
 import { Settings } from './pages/Settings';
 import { UserContext } from './user';
+import { native } from './native';
 
 const nav = [
   { href: '/', label: 'Dashboard', icon: 'dashboard' },
@@ -41,6 +42,31 @@ function useTheme(): [string, () => void] {
   return [theme, toggle];
 }
 
+// Desktop app: show a Windows notification when new alerts come in.
+function useAlertNotifications() {
+  useEffect(() => {
+    if (!native || native.kind !== 'main') return;
+    let seen: Set<string> | null = null;
+    const poll = () =>
+      api.get<any[]>('/alerts?status=open').then((rows) => {
+        if (!Array.isArray(rows)) return;
+        if (seen === null) { seen = new Set(rows.map((r) => r.id)); return; } // don't announce what was already open
+        const fresh = rows.filter((r) => !seen!.has(r.id));
+        rows.forEach((r) => seen!.add(r.id));
+        if (fresh.length === 1) {
+          const r = fresh[0];
+          const sev = r.severity === 'critical' ? 'Critical' : r.severity === 'warning' ? 'Warning' : 'Alert';
+          native!.notify(`${sev}: ${r.title}`, [r.device_name, r.message].filter(Boolean).join(' — '), '/alerts').catch(() => {});
+        } else if (fresh.length > 1) {
+          native!.notify(`${fresh.length} new alerts`, fresh.slice(0, 3).map((r) => r.title).join('\n'), '/alerts').catch(() => {});
+        }
+      }).catch(() => {});
+    poll();
+    const t = setInterval(poll, 30000);
+    return () => clearInterval(t);
+  }, []);
+}
+
 function Shell({ user, children, path }: { user: User; children: ComponentChildren; path: string }) {
   const [theme, toggleTheme] = useTheme();
   const [counts, setCounts] = useState<{ alerts: number; tickets: number }>({ alerts: 0, tickets: 0 });
@@ -54,6 +80,7 @@ function Shell({ user, children, path }: { user: User; children: ComponentChildr
     return () => clearInterval(t);
   }, []);
   useEffect(() => setOpen(false), [path]);
+  useAlertNotifications();
   const logout = async () => {
     const r = await api.post('/auth/logout');
     location.href = r.redirect || '/login';

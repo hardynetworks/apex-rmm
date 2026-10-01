@@ -3,6 +3,7 @@ import { api, wsUrl } from '../api';
 import { Icon } from '../icons';
 import { Button, Modal, deviceName, useFetch } from '../ui';
 import { TouchControls, TouchHelp, TouchMode, isTouchDevice, loadTouchMode } from './RemoteTouch';
+import { native } from '../native';
 
 type Display = { name: string; w: number; h: number; primary: boolean };
 
@@ -32,6 +33,7 @@ export function RemoteDesktop({ id }: { id: string }) {
   const [stats, setStats] = useState({ fps: 0, kbps: 0 });
   const [paste, setPaste] = useState(false);
   const [gen, setGen] = useState(0);
+  const [capture, setCapture] = useState(true); // desktop app: send Win / Alt+Tab … to the remote computer
 
   useEffect(() => {
     if (dev.data) document.title = `${deviceName(dev.data)} — Remote control`;
@@ -195,6 +197,23 @@ export function RemoteDesktop({ id }: { id: string }) {
     };
   }, [status]);
 
+  // Desktop app: it captures shortcuts Windows would otherwise keep (Win, Alt+Tab, Ctrl+Esc …)
+  // and hands them to us here.
+  useEffect(() => {
+    if (!native || status !== 'live') return;
+    (window as any).__apexKey = (t: 'kd' | 'ku', code: string) => send({ t, code });
+    native.setCapture(true).then((on) => setCapture(on)).catch(() => {});
+    return () => {
+      native!.setCapture(false).catch(() => {});
+      delete (window as any).__apexKey;
+    };
+  }, [status]);
+  const toggleCapture = () => {
+    const on = !capture;
+    setCapture(on);
+    native?.setCaptureDefault(on).catch(() => {});
+  };
+
   useEffect(() => {
     if (!touch || status !== 'live') return;
     try {
@@ -240,6 +259,12 @@ export function RemoteDesktop({ id }: { id: string }) {
           {!touch && <Button size="sm" variant="ghost" icon="keyboard" onClick={() => send({ t: 'cad' })} title="Send Ctrl+Alt+Del">Ctrl+Alt+Del</Button>}
           <Button size="sm" variant="ghost" icon="copy" onClick={() => setPaste(true)} title="Type text on the remote device">{touch ? '' : 'Paste text'}</Button>
           {touch && <Button size="sm" variant="ghost" onClick={() => setHelp(true)} title="Touch gestures">?</Button>}
+          {native && (
+            <Button size="sm" variant="ghost" icon="keyboard" class={capture ? 'rd-capture on' : 'rd-capture'} onClick={toggleCapture}
+              title={capture ? 'Windows shortcuts (Win key, Alt+Tab, Ctrl+Esc, Alt+F4) go to the remote computer. Click to keep them on this PC.' : 'Windows shortcuts stay on this PC. Click to send them to the remote computer.'}>
+              {capture ? 'Shortcuts: remote' : 'Shortcuts: local'}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" icon="refresh" onClick={() => send({ t: 'refresh' })} title="Refresh screen" />
           <Button size="sm" variant="ghost" icon="maximize" onClick={fullscreen} title="Full screen" />
           {status === 'ended'

@@ -1,0 +1,69 @@
+name: Desktop signing (wait for OSSign)
+
+# Started by desktop-release.yml after it asked OSSign to sign a release. Checks whether OSSign is
+# done; if not, starts itself again. The "Signatures" environment has a wait timer (20 minutes),
+# which is what spaces out the checks. When the signed files are ready they replace the unsigned
+# installer on the GitHub release.
+on:
+  workflow_dispatch:
+    inputs:
+      workflow_id:
+        description: 'Workflow ID returned by the OSSign dispatch'
+        required: true
+      tag:
+        description: 'Release tag, e.g. desktop-v0.1.0'
+        required: true
+      attempt:
+        required: false
+        default: '1'
+      max_attempts:
+        required: false
+        default: '72'
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  wait-and-check:
+    runs-on: ubuntu-latest
+    environment: Signatures
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Give up after too many attempts
+        run: |
+          if [ "${{ github.event.inputs.attempt }}" -gt "${{ github.event.inputs.max_attempts }}" ]; then
+            echo "Signing did not finish in time."; exit 1
+          fi
+
+      - name: Ask OSSign whether signing is done
+        id: check
+        uses: ossign/actions/workflow/dispatch@main
+        with:
+          username: ${{ secrets.OSSIGN_USER }}
+          token: ${{ secrets.OSSIGN_TOKEN }}
+          single_check: ${{ github.event.inputs.workflow_id }}
+
+      - name: Replace the release files with the signed ones
+        if: steps.check.outputs.signed_artifacts != ''
+        env:
+          SIGNED: ${{ steps.check.outputs.signed_artifacts }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          mkdir signed && cd signed
+          echo "$SIGNED" | jq -r '.[] | .browser_download_url' | while read -r url; do
+            echo "downloading $url"; curl -fsSLO "$url"
+          done
+          ls -l
+          gh release upload "$TAG" ./*.exe --clobber -R "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes "$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body)
+
+          ✅ Signed by OSSign."
+
+      - name: Not finished yet, check again later
+        if: steps.check.outputs.signed_artifacts == ''
+        run: |
+          gh workflow run desktop-sign-wait.yml --ref main -R "$GITHUB_REPOSITORY" \
+            -f workflow_id="${{ github.event.inputs.workflow_id }}" -f tag="${{ github.event.inputs.tag }}" \
+            -f attempt="$(( ${{ github.event.inputs.attempt }} + 1 ))" -f max_attempts="${{ github.event.inputs.max_attempts }}"

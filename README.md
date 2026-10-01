@@ -182,6 +182,20 @@ The viewer switches to touch controls automatically, with a bar at the bottom of
 
 `docker compose` also runs `hbbs`/`hbbr`. On a device page, **RustDesk → Install & configure** installs the RustDesk client on the endpoint (if needed), points it at your server with its public key, and sets a random per-device password. **Connect with RustDesk** then opens your local RustDesk app straight into the session. Your technicians' RustDesk clients need the ID server and key shown under **Settings → General**.
 
+## Desktop app (Windows)
+
+**Apex RMM for Windows** is a small native app (`desktop/`) that shows the same dashboard as the web version, loaded from your server, so it always matches. On top of that it adds:
+
+* **Remote control in its own windows** with **keyboard capture**: the Windows key, Alt+Tab, Alt+Esc, Ctrl+Esc, Alt+F4 and browser shortcuts like F5 or Ctrl+R go to the remote computer instead of your own. A **Shortcuts: remote / local** button in the viewer switches this off.
+* A **tray icon**: closing the window keeps Apex running in the tray, and **new alerts pop up as Windows notifications**. Click one to open the Alerts page.
+* **Start with Windows**, **Change server…** and **Check for updates** in the tray menu. Signed updates install themselves.
+
+**Install:** download `ApexRMM-Desktop-Setup-<version>.exe` from the [releases](https://github.com/hardynetworks/apex-rmm/releases) (tags `desktop-v…`) and run it. No administrator rights are needed; it installs for your user account. On first start, enter your server address (the same one you open in the browser) and sign in as usual, including Authentik SSO. It needs Windows 10 or 11 (x64 or ARM64) with the Microsoft Edge WebView2 Runtime, which is built into Windows 11 and current Windows 10.
+
+**Uninstall:** Settings → Apps → Apex RMM.
+
+**Releasing a new version:** push a tag such as `desktop-v0.2.0`. GitHub Actions builds the installer and publishes the release. Releases are code-signed through [OSSign](https://github.com/ossign) once the project's signing is set up; see [desktop/SIGNING.md](desktop/SIGNING.md). Building locally on Windows: `cd desktop; ./build.ps1 -Version 0.2.0` (needs Go; NSIS is installed automatically).
+
 ## Roles
 
 Roles are synced from Authentik groups at every sign-in (see `OIDC_*_GROUPS`).
@@ -302,6 +316,7 @@ internal/agent        agent core, inventory/metrics, scripts, PTY, services, Rus
 internal/agent/desktop  remote desktop: capture + input per OS, tile encoder
 internal/proto        wire protocol shared by server and agent
 web/                  dashboard
+desktop/              Windows desktop app (WebView2 shell, tray, keyboard capture, installer)
 ```
 
 ## Security notes
@@ -314,3 +329,7 @@ web/                  dashboard
 ## Roadmap ideas
 
 Patch management (Windows Update / apt / softwareupdate), Wayland capture via PipeWire, file transfer in the viewer, customer portal & email-to-ticket, SLA timers, reporting.
+
+## License
+
+[MIT](LICENSE)

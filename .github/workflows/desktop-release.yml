@@ -1,0 +1,62 @@
+name: Desktop release
+
+# Push a tag like "desktop-v0.1.0" to publish a release of the Windows desktop app.
+# 1. Builds the installer and publishes it to a GitHub release (unsigned, so it works right away).
+# 2. If the OSSign secrets are set, asks OSSign to build + sign it. desktop-sign-wait.yml then
+#    waits for the signed files and replaces the unsigned ones on the release.
+on:
+  push:
+    tags: ['desktop-v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)release, e.g. desktop-v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      HAS_OSSIGN: ${{ secrets.OSSIGN_TOKEN != '' && secrets.OSSIGN_USER != '' }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+
+      - name: Build
+        working-directory: desktop
+        run: ./build.ps1 -Version ($env:TAG -replace '^desktop-v', '')
+
+      - name: Publish GitHub release
+        run: |
+          $ver = $env:TAG -replace '^desktop-v', ''
+          $notes = "Apex RMM for Windows $ver.`n`nDownload **ApexRMM-Desktop-Setup-$ver.exe** and run it (no administrator rights needed). Requires Windows 10 or 11 with the Microsoft Edge WebView2 Runtime (already included in Windows 11 and up-to-date Windows 10)."
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create $env:TAG --title "Apex RMM Desktop $ver" --notes $notes }
+          gh release upload $env:TAG "desktop/dist/ApexRMM-Desktop-Setup-$ver.exe" --clobber
+
+      - name: Request signing from OSSign
+        id: dispatch
+        if: env.HAS_OSSIGN == 'true'
+        uses: ossign/actions/workflow/dispatch@main
+        with:
+          username: ${{ secrets.OSSIGN_USER }}
+          token: ${{ secrets.OSSIGN_TOKEN }}
+          dispatch_only: true
+
+      - name: Wait for the signed files
+        if: ${{ steps.dispatch.outputs.workflow_id != '' }}
+        run: gh workflow run desktop-sign-wait.yml --ref main -f workflow_id=${{ steps.dispatch.outputs.workflow_id }} -f tag=$env:TAG
