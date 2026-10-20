@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -298,7 +299,26 @@ func (s *Server) wsDesktop(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	s.hub.runDesktopViewer(d, ws)
+	s.hub.runDesktopViewer(d, ws, func(b []byte) {
+		if !bytes.Contains(b, []byte(`"fget"`)) && !bytes.Contains(b, []byte(`"fput"`)) {
+			return
+		}
+		var m struct {
+			T    string `json:"t"`
+			Path string `json:"path"`
+			Name string `json:"name"`
+			Size int64  `json:"size"`
+		}
+		if json.Unmarshal(b, &m) != nil {
+			return
+		}
+		switch m.T {
+		case "fget":
+			s.audit(context.Background(), u, r, "device.file_download", "device", d.deviceID, map[string]any{"path": m.Path})
+		case "fput":
+			s.audit(context.Background(), u, r, "device.file_upload", "device", d.deviceID, map[string]any{"folder": m.Path, "name": m.Name, "size": m.Size})
+		}
+	})
 }
 
 func (s *Server) wsTerminal(w http.ResponseWriter, r *http.Request) {

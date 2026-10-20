@@ -4,13 +4,16 @@ import { Icon } from '../icons';
 import { Button, Modal, deviceName, useFetch } from '../ui';
 import { TouchControls, TouchHelp, TouchMode, isTouchDevice, loadTouchMode } from './RemoteTouch';
 import { native } from '../native';
+import { FileLink, FilesPanel, useTransfers } from './RemoteFiles';
 
 type Display = { name: string; w: number; h: number; primary: boolean };
 
-const QUALITY: Record<string, { q: number; s: number; fps: number }> = {
-  low: { q: 35, s: 0.5, fps: 10 },
-  balanced: { q: 60, s: 0.75, fps: 15 },
-  high: { q: 80, s: 1, fps: 20 },
+// v: 2 tells the agent this viewer understands solid fills and adaptive quality (sharp
+// "refine" passes after scrolling or dragging).
+const QUALITY: Record<string, { q: number; s: number; fps: number; v: number }> = {
+  low: { q: 40, s: 0.6, fps: 15, v: 2 },
+  balanced: { q: 60, s: 1, fps: 25, v: 2 },
+  high: { q: 82, s: 1, fps: 30, v: 2 },
 };
 
 export function RemoteDesktop({ id }: { id: string }) {
@@ -27,7 +30,14 @@ export function RemoteDesktop({ id }: { id: string }) {
   const [warning, setWarning] = useState('');
   const [displays, setDisplays] = useState<Display[]>([]);
   const [display, setDisplay] = useState(0);
-  const [quality, setQuality] = useState('balanced');
+  const [quality, setQuality] = useState(() => { try { return localStorage.getItem('apex-rd-quality') || 'balanced'; } catch { return 'balanced'; } });
+  const qualityRef = useRef(quality);
+  qualityRef.current = QUALITY[quality] ? quality : 'balanced';
+  const [link, setLink] = useState<FileLink | null>(null);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const transfers = useTransfers(link);
+  const activeTransfers = transfers.filter((t) => t.state === 'active' || t.state === 'waiting').length;
   const [fit, setFit] = useState(true);
   const fitMode = touch || fit;
   const [stats, setStats] = useState({ fps: 0, kbps: 0 });
@@ -66,15 +76,21 @@ export function RemoteDesktop({ id }: { id: string }) {
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
       let queue = Promise.resolve();
+      let files: FileLink | null = null;
       ws.onmessage = (ev) => {
         if (typeof ev.data === 'string') {
           const m = JSON.parse(ev.data);
+          if (files && files.handle(m)) return;
           if (m.t === 'hello') {
             setDisplays(m.displays || []);
             setDisplay(m.display || 0);
             setWarning(m.warning || '');
-            const qv = QUALITY[quality];
+            const qv = QUALITY[qualityRef.current];
             ws.send(JSON.stringify({ t: 'opt', ...qv }));
+            if (m.files && !files) {
+              files = new FileLink(ws);
+              setLink(files);
+            }
             setStatus('live');
           } else if (m.t === 'size') {
             size.current = { w: m.w, h: m.h };
@@ -88,6 +104,7 @@ export function RemoteDesktop({ id }: { id: string }) {
         }
         bytes += ev.data.byteLength;
         const buf = ev.data as ArrayBuffer;
+        if (files && files.chunk(buf)) return;
         // decode sequentially so tiles land in order
         queue = queue.then(() => drawFrame(buf)).then(() => {
           frames++;
@@ -95,26 +112,55 @@ export function RemoteDesktop({ id }: { id: string }) {
         }).catch(() => {});
       };
       ws.onclose = () => {
+        files?.close();
         if (!closed) setStatus('ended');
       };
     })();
 
+    // Protocol 1: 0x01 | u16 n | n * (u16 x,y,w,h | u32 len | jpeg)
+    // Protocol 2: 0x02 | u16 n | n * (u8 kind | u16 x,y,w,h | kind 0: u32 len | jpeg; kind 1: r,g,b;
+    //             kind 2: u16 srcX,srcY — copy from the screen as it was before this message, i.e. scrolling)
     const drawFrame = async (buf: ArrayBuffer) => {
       const v = new DataView(buf);
-      if (v.getUint8(0) !== 1) return;
+      const ver = v.getUint8(0);
+      if (ver !== 1 && ver !== 2) return;
       const n = v.getUint16(1);
       let off = 3;
       const tiles: { x: number; y: number; blob: Blob }[] = [];
+      const fills: { x: number; y: number; w: number; h: number; c: string }[] = [];
+      const copies: { x: number; y: number; w: number; h: number; sx: number; sy: number }[] = [];
       for (let i = 0; i < n; i++) {
-        const x = v.getUint16(off), y = v.getUint16(off + 2);
-        const len = v.getUint32(off + 8);
-        off += 12;
+        const kind = ver === 2 ? v.getUint8(off++) : 0;
+        const x = v.getUint16(off), y = v.getUint16(off + 2), w = v.getUint16(off + 4), h = v.getUint16(off + 6);
+        off += 8;
+        if (kind === 1) {
+          fills.push({ x, y, w, h, c: `rgb(${v.getUint8(off)},${v.getUint8(off + 1)},${v.getUint8(off + 2)})` });
+          off += 3;
+          continue;
+        }
+        if (kind === 2) {
+          copies.push({ x, y, w, h, sx: v.getUint16(off), sy: v.getUint16(off + 2) });
+          off += 4;
+          continue;
+        }
+        const len = v.getUint32(off);
+        off += 4;
         tiles.push({ x, y, blob: new Blob([new Uint8Array(buf, off, len)], { type: 'image/jpeg' }) });
         off += len;
       }
+      const c = canvas.current;
+      const before = copies.length && c ? await createImageBitmap(c) : null;
       const bitmaps = await Promise.all(tiles.map((t) => createImageBitmap(t.blob)));
-      const ctx = canvas.current?.getContext('2d');
+      const ctx = c?.getContext('2d');
       if (!ctx) return;
+      if (before) {
+        for (const k of copies) ctx.drawImage(before, k.sx, k.sy, k.w, k.h, k.x, k.y, k.w, k.h);
+        before.close();
+      }
+      for (const f of fills) {
+        ctx.fillStyle = f.c;
+        ctx.fillRect(f.x, f.y, f.w, f.h);
+      }
       bitmaps.forEach((b, i) => {
         ctx.drawImage(b, tiles[i].x, tiles[i].y);
         b.close();
@@ -123,6 +169,7 @@ export function RemoteDesktop({ id }: { id: string }) {
 
     return () => {
       closed = true;
+      setLink(null);
       clearInterval(statTimer);
       wsRef.current?.close();
       wsRef.current = null;
@@ -223,7 +270,21 @@ export function RemoteDesktop({ id }: { id: string }) {
 
   const setQ = (q: string) => {
     setQuality(q);
+    try { localStorage.setItem('apex-rd-quality', q); } catch {}
     send({ t: 'opt', ...QUALITY[q] });
+  };
+  // Drag files from this computer onto the remote screen to upload them.
+  const hasFiles = (e: DragEvent) => !!link && !!e.dataTransfer?.types.includes('Files');
+  const stageDragOver = (e: DragEvent) => { if (hasFiles(e)) { e.preventDefault(); setDragOver(true); } };
+  const stageDrop = (e: DragEvent) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer!.files);
+    if (!files.length || !link) return;
+    setFilesOpen(true);
+    if (link.cwd) link.upload(files, link.cwd);
+    else link.list('').then((l) => { link.cwd = l.path; link.upload(files, l.path); }).catch(() => link.upload(files, ''));
   };
   const pickDisplay = (i: number) => {
     setDisplay(i);
@@ -250,6 +311,11 @@ export function RemoteDesktop({ id }: { id: string }) {
               {displays.map((d, i) => <option key={i} value={i}>{d.name}{d.primary ? ' (primary)' : ''}</option>)}
             </select>
           )}
+          {link && (
+            <Button size="sm" variant="ghost" icon="folder" class={filesOpen ? 'rd-capture on' : ''} onClick={() => setFilesOpen(!filesOpen)} title="Transfer files to and from the remote device">
+              {touch ? (activeTransfers ? String(activeTransfers) : '') : activeTransfers ? `Files (${activeTransfers})` : 'Files'}
+            </Button>
+          )}
           <select value={quality} onChange={(e) => setQ((e.target as HTMLSelectElement).value)} title="Quality">
             <option value="low">Low bandwidth</option>
             <option value="balanced">Balanced</option>
@@ -273,8 +339,11 @@ export function RemoteDesktop({ id }: { id: string }) {
         </div>
       </header>
       {warning && <div class="rd-warn"><Icon name="alert" size={16} /> {warning}</div>}
-      <div ref={stage} class={'rd-stage ' + (fitMode ? 'fit' : 'actual') + (touch ? ' touch' : '')}>
+      <div class="rd-main">
+      <div ref={stage} class={'rd-stage ' + (fitMode ? 'fit' : 'actual') + (touch ? ' touch' : '')}
+        onDragOver={stageDragOver} onDragLeave={() => setDragOver(false)} onDrop={stageDrop}>
         <canvas ref={canvas} tabIndex={0} class={status === 'live' ? '' : 'hidden'} />
+        {dragOver && <div class="rd-drop"><Icon name="upload" size={32} /><span>Drop to upload to the remote device{link?.cwd ? <><br /><b>{link.cwd}</b></> : ' (home folder)'}</span></div>}
         {status !== 'live' && (
           <div class="rd-overlay">
             {error ? (
@@ -292,6 +361,8 @@ export function RemoteDesktop({ id }: { id: string }) {
             )}
           </div>
         )}
+      </div>
+      {filesOpen && link && <FilesPanel link={link} onClose={() => { setFilesOpen(false); canvas.current?.focus(); }} />}
       </div>
       {touch && status === 'live' && (
         <TouchControls stage={stage} canvas={canvas} send={send} mode={touchMode} setMode={setTouchMode} onCad={() => send({ t: 'cad' })} />

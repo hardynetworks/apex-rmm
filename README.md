@@ -4,7 +4,7 @@ A self-hosted Remote Monitoring & Management platform that runs in Docker, signs
 
 | | |
 |---|---|
-| **Remote control** | Built-in browser remote desktop written from scratch (screen capture + dirty-tile JPEG streaming + keyboard/mouse injection) with **RustDesk** as a one-click backup connection |
+| **Remote control** | Built-in browser remote desktop written from scratch (screen capture, dirty-tile streaming with scroll detection, keyboard/mouse injection, **file transfer**) with **RustDesk** as a one-click backup connection |
 | **Monitoring & alerts** | Live CPU / memory / disk / network, 14-day history charts, threshold & offline policies, webhook notifications (Discord, Slack, ntfy, generic), maintenance mode |
 | **Scripting & automation** | Script library (PowerShell, cmd, Bash, sh, zsh, Python), run on one/many/all devices, per-device output, cron schedules, queued runs for offline devices |
 | **Ticketing / PSA** | Tickets linked to clients & devices, assignees, priorities, due dates, internal notes, time tracking, alerts → tickets |
@@ -158,7 +158,13 @@ Click **Remote control** on a device. A pop-up viewer opens and the agent launch
 | **macOS 12+** | Helper runs in the console user's GUI session via `launchctl asuser`, CoreGraphics capture and `CGEvent` input (via purego, no cgo). | Grant **Screen Recording** and **Accessibility** to `/usr/local/apex-agent/apex-agent` in System Settings → Privacy & Security, or push a PPPC profile with your MDM. Because the binary is unsigned, re-approve after an agent update (or sign it with your Developer ID). |
 | **Linux** | Finds the running Xorg server and its auth cookie, captures with X11 `GetImage`, injects input with XTEST. Works on the login screen too. | An **Xorg** session. Wayland isn't supported by the built-in viewer — pick "Ubuntu on Xorg" at login, set `WaylandEnable=false` in `/etc/gdm3/custom.conf`, or use RustDesk. |
 
-Viewer features: multi-monitor switching, quality presets (bandwidth-adaptive with flow control), fit / 1:1 scaling, paste-as-keystrokes, Ctrl+Alt+Del, full screen, live fps/bitrate. Every session is written to the audit log.
+Viewer features: multi-monitor switching, quality presets (bandwidth-adaptive with flow control), fit / 1:1 scaling, paste-as-keystrokes, Ctrl+Alt+Del, full screen, live fps/bitrate, file transfer. Every session is written to the audit log.
+
+**How it stays fast:** only the 64-pixel tiles that changed are sent; scrolling is detected and sent as a "move this area" instruction plus the newly exposed strip; flat areas are sent as solid fills; while the screen is busy (scrolling, dragging a window) tiles go out at a lower quality and are re-sent sharp a moment after they stop changing. Encoding runs on all CPU cores, separately from input, and the agent captures faster right after you click or type. Measured on a 1920×1080 screen scrolling a busy page: 24 fps at 5.5 Mbit/s at full resolution (the previous version managed 15 fps at 12 Mbit/s at 75 % scale), and clicks show up about twice as fast.
+
+### File transfer
+
+Click **Files** in the viewer to browse the remote computer, starting in the signed-in user's home folder (with a drive picker on Windows). Click a file to download it; use **Upload** or drag files from your computer onto the panel or straight onto the remote screen to upload into the open folder. Uploads never overwrite: an existing name becomes `name (1).ext`. Transfers show progress and can be cancelled (a cancelled upload is deleted from the device). Anyone allowed to remote-control a device (technician and up) can transfer files. Files go through the same session as the screen (encrypted when you use HTTPS), the helper runs as SYSTEM/root so any folder is reachable, and uploaded files on macOS/Linux are given to the signed-in user. Every upload and download is written to the audit log with its path.
 
 ### On a phone or tablet
 
@@ -328,7 +334,7 @@ desktop/              Windows desktop app (WebView2 shell, tray, keyboard captur
 
 ## Roadmap ideas
 
-Patch management (Windows Update / apt / softwareupdate), Wayland capture via PipeWire, file transfer in the viewer, customer portal & email-to-ticket, SLA timers, reporting.
+Patch management (Windows Update / apt / softwareupdate), Wayland capture via PipeWire, DXGI desktop duplication on Windows, clipboard sync, customer portal & email-to-ticket, SLA timers, reporting.
 
 ## License
 

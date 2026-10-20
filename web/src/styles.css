@@ -461,3 +461,47 @@ details[open] summary { margin-bottom: 8px; }
 
 /* desktop app: keyboard-capture toggle in the remote viewer */
 .rd-tools .btn.rd-capture.on { color: #93c5fd; }
+
+/* remote viewer: file transfer panel */
+.rd-main { flex: 1; display: flex; min-height: 0; position: relative; }
+.rd-main .rd-stage { min-width: 0; }
+.rd-files { position: relative; width: 340px; flex: none; display: flex; flex-direction: column; background: #0f172a; border-left: 1px solid #1e293b; font-size: 13px; min-height: 0; }
+.rd-files-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 8px 12px; gap: 8px; }
+.rd-files-head strong { display: flex; align-items: center; gap: 7px; font-size: 14px; }
+.rd-files-actions { display: flex; align-items: center; gap: 4px; }
+.rd-icon-btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: #cbd5e1; cursor: pointer; flex: none; }
+.rd-icon-btn:hover:not([disabled]) { background: #1e293b; color: #fff; }
+.rd-icon-btn[disabled] { opacity: .35; cursor: default; }
+.rd-files-nav { display: flex; align-items: center; gap: 2px; padding: 0 8px; }
+.rd-files-nav select { margin-left: auto; width: auto; background: #1e293b; color: #e2e8f0; border-color: #334155; padding: 3px 24px 3px 8px; font-size: 12.5px; }
+.rd-files-path { padding: 6px 10px 8px; }
+.rd-files-path input { width: 100%; background: #0b1222; color: #e2e8f0; border: 1px solid #334155; border-radius: 7px; padding: 6px 8px; font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.rd-files-err { margin: 0 10px 8px; padding: 6px 8px; border-radius: 7px; background: #450a0a; color: #fecaca; display: flex; gap: 6px; align-items: center; }
+.rd-files-list { flex: 1; overflow-y: auto; min-height: 80px; border-top: 1px solid #1e293b; padding: 4px; }
+.rd-files-empty { color: #8391a8; text-align: center; padding: 18px 8px; }
+.rd-file { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; cursor: pointer; color: #cbd5e1; }
+.rd-file:hover { background: #1e293b; color: #fff; }
+.rd-file.dir .icon { color: #fbbf24; }
+.rd-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-file-meta { color: #8391a8; font-size: 12px; white-space: nowrap; }
+.rd-file-dl { color: #93c5fd; opacity: 0; }
+.rd-file:hover .rd-file-dl { opacity: 1; }
+.rd-transfers { border-top: 1px solid #1e293b; max-height: 40%; overflow-y: auto; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.rd-transfers-head { display: flex; justify-content: space-between; align-items: center; color: #8391a8; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 2px 4px; }
+.rd-link { background: none; border: 0; color: #93c5fd; cursor: pointer; font: inherit; text-transform: none; letter-spacing: 0; padding: 0; }
+.rd-xfer { display: flex; align-items: center; gap: 8px; padding: 4px 2px; color: #cbd5e1; }
+.rd-xfer-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.rd-xfer-top { display: flex; gap: 8px; align-items: baseline; }
+.rd-bar-track { height: 4px; background: #1e293b; border-radius: 4px; overflow: hidden; }
+.rd-bar-fill { height: 100%; background: #3b82f6; border-radius: 4px; transition: width .2s; }
+.rd-xfer.done .rd-bar-fill { background: #22c55e; }
+.rd-xfer.error .rd-bar-fill, .rd-xfer.cancelled .rd-bar-fill { background: #64748b; }
+.rd-xfer.error .rd-file-meta { color: #fca5a5; }
+.rd-xfer .ok { color: #22c55e; flex: none; }
+.rd-files-hint { padding: 8px 12px 10px; color: #8391a8; font-size: 12px; line-height: 1.45; border-top: 1px solid #1e293b; word-break: break-word; }
+.rd-drop { position: absolute; inset: 8px; border: 2px dashed #3b82f6; border-radius: 12px; background: rgba(15, 23, 42, .82); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; color: #e2e8f0; pointer-events: none; z-index: 4; padding: 16px; word-break: break-word; }
+@media (max-width: 700px) {
+  .rd-files { position: absolute; inset: 0; width: auto; z-index: 6; border-left: 0; }
+  .rd-file { padding: 10px 8px; }
+  .rd-file-dl { opacity: 1; }
+}

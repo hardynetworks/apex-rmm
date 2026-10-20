@@ -392,8 +392,9 @@ func (h *Hub) attachDesktopAgent(d *desktopSession, ws *websocket.Conn) {
 	_ = ws.Close()
 }
 
-// runDesktopViewer pipes frames between the browser and the helper.
-func (h *Hub) runDesktopViewer(d *desktopSession, viewer *websocket.Conn) {
+// runDesktopViewer pipes frames between the browser and the helper. observe (optional) sees
+// every text message from the viewer, for auditing file transfers.
+func (h *Hub) runDesktopViewer(d *desktopSession, viewer *websocket.Conn, observe func([]byte)) {
 	defer func() {
 		h.dropDesktop(d)
 		_ = viewer.Close()
@@ -408,7 +409,7 @@ func (h *Hub) runDesktopViewer(d *desktopSession, viewer *websocket.Conn) {
 	}
 	agent := d.agentConn
 	agent.SetReadLimit(64 << 20)
-	viewer.SetReadLimit(1 << 20)
+	viewer.SetReadLimit(4 << 20) // file upload chunks
 	go func() {
 		defer d.finish()
 		for {
@@ -433,6 +434,9 @@ func (h *Hub) runDesktopViewer(d *desktopSession, viewer *websocket.Conn) {
 		if err != nil {
 			d.finish()
 			return
+		}
+		if observe != nil && mt == websocket.TextMessage {
+			observe(b)
 		}
 		_ = agent.SetWriteDeadline(time.Now().Add(30 * time.Second))
 		if err := agent.WriteMessage(mt, b); err != nil {

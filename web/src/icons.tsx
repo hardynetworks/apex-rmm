@@ -53,6 +53,11 @@ const paths: Record<string, string> = {
   history: 'M3 12a9 9 0 1 0 3-6.7M3 4v4h4M12 7v5l3 2',
   server: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
   laptop: 'M5 5h14v10H5zM2 19h20',
+  folder: 'M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
+  file: 'M6 3h8l5 5v13H6zM14 3v5h5',
+  upload: 'M12 16V5M7 10l5-5 5 5M4 20h16',
+  up: 'M12 19V5M5 12l7-7 7 7',
+  home: 'M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5',
 };
 
 export function Icon({ name, size = 18, class: cls }: { name: keyof typeof paths | string; size?: number; class?: string }) {
