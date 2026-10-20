@@ -1,0 +1,39 @@
+name: OpenH264 pins
+
+# Run manually after bumping the OpenH264 version: downloads Cisco's signed binaries, checks
+# Cisco's signatures and prints the SHA-256 pins used in internal/agent/desktop/openh264.go.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: OpenH264 version
+        default: 2.6.0
+
+jobs:
+  pins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download, verify and hash
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          set -eu
+          files="libopenh264-$V-linux64.8.so libopenh264-$V-linux-arm64.8.so libopenh264-$V-mac-arm64.dylib libopenh264-$V-mac-x64.dylib openh264-$V-win64.dll openh264-$V-win-arm64.dll"
+          for f in $files; do
+            curl -fsSLO "http://ciscobinary.openh264.org/$f.bz2"
+            curl -fsSLO "http://ciscobinary.openh264.org/$f.signed.md5.txt"
+          done
+          echo "== signatures"
+          for f in $files; do
+            gpg --batch --keyserver hkps://keyserver.ubuntu.com --keyserver-options auto-key-retrieve --verify "$f.signed.md5.txt" 2>&1 | grep -E "Good signature|BAD|using|key" || true
+          done
+          echo "== md5 (signed) vs actual"
+          for f in $files; do
+            bunzip2 -k "$f.bz2"
+            echo "$f signed=$(grep -oE '[0-9a-f]{32}' "$f.signed.md5.txt" | head -1) bz2=$(md5sum < "$f.bz2" | cut -c1-32) bin=$(md5sum < "$f" | cut -c1-32)"
+          done
+          echo "== PINS"
+          for f in $files; do
+            echo "PIN $f $(sha256sum < "$f" | cut -c1-64) $(stat -c %s "$f")"
+          done
