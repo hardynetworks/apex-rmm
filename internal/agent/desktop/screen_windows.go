@@ -5,7 +5,10 @@ package desktop
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"syscall"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -124,6 +127,51 @@ type winScreen struct {
 	bits     uintptr
 	bw, bh   int
 	frame    Frame
+
+	dxgi      *dxgiDup
+	dxgiRetry time.Time
+	method    string
+}
+
+// Method reports how the screen is being captured (shown in the viewer's stream details).
+func (s *winScreen) Method() string { return s.method }
+
+func (s *winScreen) closeDXGI() {
+	if s.dxgi != nil {
+		s.dxgi.Close()
+		s.dxgi = nil
+	}
+}
+
+// captureDXGI tries Desktop Duplication for single displays; false means "use GDI".
+func (s *winScreen) captureDXGI(d Display) bool {
+	if len(s.displays) > 1 && s.cur == len(s.displays)-1 { // "All displays" spans several outputs
+		return false
+	}
+	if s.dxgi == nil {
+		if time.Now().Before(s.dxgiRetry) || !dxgiAllowed() {
+			return false
+		}
+		marker := dxgiMarker()
+		_ = os.WriteFile(marker, []byte(time.Now().String()), 0o644)
+		x, err := newDXGIDup(d)
+		if err != nil {
+			_ = os.Remove(marker)
+			log.Printf("DXGI capture unavailable (%v); using GDI", err)
+			s.dxgiRetry = time.Now().Add(30 * time.Second)
+			return false
+		}
+		s.dxgi = x
+		defer os.Remove(marker) // removed once the first capture has survived
+	}
+	ok, err := s.dxgi.capture(&s.frame)
+	if err != nil {
+		log.Printf("DXGI capture: %v; recreating", err)
+		s.closeDXGI()
+		s.dxgiRetry = time.Now().Add(2 * time.Second)
+		return false
+	}
+	return ok
 }
 
 func setDPIAware() {
@@ -197,6 +245,7 @@ func (s *winScreen) Select(i int) error {
 	}
 	s.cur = i
 	s.freeBitmap()
+	s.closeDXGI()
 	return nil
 }
 
@@ -221,6 +270,7 @@ func (s *winScreen) syncDesktop() {
 		pCloseDesktop.Call(h)
 		return
 	}
+	s.closeDXGI() // a thread holding graphics objects may not be allowed to switch desktops
 	if r, _, _ := pSetThreadDesktop.Call(h); r == 0 {
 		pCloseDesktop.Call(h)
 		return
@@ -254,6 +304,11 @@ func (s *winScreen) freeDC() {
 func (s *winScreen) Capture() (*Frame, error) {
 	s.syncDesktop()
 	d := s.displays[s.cur]
+	if s.captureDXGI(d) {
+		s.method = "DXGI"
+		return &s.frame, nil
+	}
+	s.method = "GDI"
 	if s.hdcScr == 0 {
 		s.hdcScr, _, _ = pGetDC.Call(0)
 		s.hdcMem, _, _ = pCreateCompatibleDC.Call(s.hdcScr)
@@ -403,6 +458,7 @@ func (s *winScreen) CtrlAltDel() {
 }
 
 func (s *winScreen) Close() {
+	s.closeDXGI()
 	s.freeDC()
 	if s.desk != 0 {
 		pCloseDesktop.Call(s.desk)

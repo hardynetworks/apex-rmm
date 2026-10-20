@@ -10,6 +10,9 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/jezek/xgb v1.1.1
+	github.com/pion/interceptor v0.1.43
+	github.com/pion/rtcp v1.2.16
+	github.com/pion/webrtc/v4 v4.2.3
 	github.com/kardianos/service v1.2.4
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.25.10

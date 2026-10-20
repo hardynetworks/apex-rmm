@@ -154,13 +154,29 @@ Click **Remote control** on a device. A pop-up viewer opens and the agent launch
 
 | OS | How it works | Requirements |
 |---|---|---|
-| **Windows 10/11, Server 2016+** | Helper runs as SYSTEM in the active console (or RDP) session and follows the input desktop, so the **lock screen, sign-in screen and UAC prompts** are visible and controllable. GDI capture, `SendInput` with scan codes. Ctrl+Alt+Del via `SendSAS` (the installer enables the `SoftwareSASGeneration` policy). | none |
+| **Windows 10/11, Server 2016+** | Helper runs as SYSTEM in the active console (or RDP) session and follows the input desktop, so the **lock screen, sign-in screen and UAC prompts** are visible and controllable. DXGI Desktop Duplication capture (GDI as fallback, e.g. in VMs without a display adapter), `SendInput` with scan codes. Ctrl+Alt+Del via `SendSAS` (the installer enables the `SoftwareSASGeneration` policy). | none |
 | **macOS 12+** | Helper runs in the console user's GUI session via `launchctl asuser`, CoreGraphics capture and `CGEvent` input (via purego, no cgo). | Grant **Screen Recording** and **Accessibility** to `/usr/local/apex-agent/apex-agent` in System Settings → Privacy & Security, or push a PPPC profile with your MDM. Because the binary is unsigned, re-approve after an agent update (or sign it with your Developer ID). |
 | **Linux** | Finds the running Xorg server and its auth cookie, captures with X11 `GetImage`, injects input with XTEST. Works on the login screen too. | An **Xorg** session. Wayland isn't supported by the built-in viewer — pick "Ubuntu on Xorg" at login, set `WaylandEnable=false` in `/etc/gdm3/custom.conf`, or use RustDesk. |
 
 Viewer features: multi-monitor switching, quality presets (bandwidth-adaptive with flow control), fit / 1:1 scaling, paste-as-keystrokes, Ctrl+Alt+Del, full screen, live fps/bitrate, file transfer. Every session is written to the audit log.
 
-**How it stays fast:** only the 64-pixel tiles that changed are sent; scrolling is detected and sent as a "move this area" instruction plus the newly exposed strip; flat areas are sent as solid fills; while the screen is busy (scrolling, dragging a window) tiles go out at a lower quality and are re-sent sharp a moment after they stop changing. Encoding runs on all CPU cores, separately from input, and the agent captures faster right after you click or type. Measured on a 1920×1080 screen scrolling a busy page: 24 fps at 5.5 Mbit/s at full resolution (the previous version managed 15 fps at 12 Mbit/s at 75 % scale), and clicks show up about twice as fast.
+**Video (H.264).** When the browser supports it (Chrome, Edge, Firefox 130+, Safari 16.4+, and the desktop app), the screen is streamed as H.264 video, which needs far less bandwidth than images: a scrolling page at 1080p takes well under 1 Mbit/s. The agent encodes with Cisco's **OpenH264**, which it downloads from Cisco the first time it starts (about 1 MB, checked against a pinned SHA-256; Cisco's license covers the H.264 patents only for binaries downloaded from them, so it can't be bundled). The library is stored in `C:\Program Files\ApexRMM\codecs`, `/usr/local/apex-agent/codecs` or `/var/lib/apex-agent/codecs`. If the download is blocked, or on 32-bit ARM, the viewer uses images instead.
+
+**Direct connection (WebRTC).** The viewer tries to reach the device directly over UDP (same network, both on NetBird or another VPN, or through most home routers using STUN). Video then skips the Apex server, and input goes over a WebRTC data channel. If no direct path works within a few seconds, everything goes through the server as before; nothing needs opening on your firewall. **Stream → Connection → Via server** turns this off.
+
+**Stream settings.** Click **Stream** in the viewer (or the status line) to pick:
+
+| Setting | Options |
+|---|---|
+| Frame rate | 15, 30, 60, 120 fps (the most the device's CPU and screen capture can deliver; a still screen sends almost nothing) |
+| Bandwidth | Automatic, or a cap from 1 to 50 Mbit/s |
+| Resolution | Full, 75 %, 50 % |
+| Encoding | Video (H.264) or Images |
+| Connection | Direct when possible, or always via the server |
+
+With **Automatic** bandwidth, the agent measures how fast frames actually arrive. When frames start queueing it lowers quality right away, so the picture stays current instead of lagging seconds behind, and it raises quality again when there's room. The panel also shows the frame rate, bitrate, round trip, path and capture/encode times, which help when a connection feels slow.
+
+**Images mode** sends only the 64-pixel tiles that changed. Scrolling becomes a "move this area" instruction plus the newly exposed strip, flat areas become solid fills, and busy screens go out at lower quality first and are re-sent sharp a moment later.
 
 ### File transfer
 

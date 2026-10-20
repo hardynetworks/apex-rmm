@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/hardynetworks/apex-rmm/internal/agent/desktop"
 	"github.com/hardynetworks/apex-rmm/internal/proto"
 	"github.com/shirou/gopsutil/v4/process"
 )
@@ -55,6 +56,7 @@ func (a *Agent) Run(ctx context.Context) {
 	a.mc = newMetricsCollector()
 	backoff := 2 * time.Second
 	go a.updateLoop(ctx)
+	desktop.PrefetchCodec() // H.264 encoder for remote control, downloaded from Cisco once
 	for ctx.Err() == nil {
 		start := time.Now()
 		err := a.session(ctx)

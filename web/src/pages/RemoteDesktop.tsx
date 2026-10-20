@@ -5,16 +5,16 @@ import { Button, Modal, deviceName, useFetch } from '../ui';
 import { TouchControls, TouchHelp, TouchMode, isTouchDevice, loadTouchMode } from './RemoteTouch';
 import { native } from '../native';
 import { FileLink, FilesPanel, useTransfers } from './RemoteFiles';
+import { RTCLink } from './RemoteRTC';
+import { StreamSettings, VideoSink, h264Supported, loadSettings, optMessage, saveSettings } from './RemoteVideo';
 
 type Display = { name: string; w: number; h: number; primary: boolean };
 
-// v: 2 tells the agent this viewer understands solid fills and adaptive quality (sharp
-// "refine" passes after scrolling or dragging).
-const QUALITY: Record<string, { q: number; s: number; fps: number; v: number }> = {
-  low: { q: 40, s: 0.6, fps: 15, v: 2 },
-  balanced: { q: 60, s: 1, fps: 25, v: 2 },
-  high: { q: 82, s: 1, fps: 30, v: 2 },
-};
+type AgentStats = { mode: string; codec: string; fps: number; kbps: number; target: number; rtt: number; cap: number; enc: number; capture: string; congested: boolean };
+
+const FPS_OPTIONS = [15, 30, 60, 120];
+const BW_OPTIONS: [number, string][] = [[0, 'Automatic'], [1000, '1 Mbit/s'], [2000, '2 Mbit/s'], [5000, '5 Mbit/s'], [10000, '10 Mbit/s'], [20000, '20 Mbit/s'], [50000, '50 Mbit/s']];
+const SCALE_OPTIONS: [number, string][] = [[1, 'Full'], [0.75, '75%'], [0.5, '50%']];
 
 export function RemoteDesktop({ id }: { id: string }) {
   const dev = useFetch<any>('/devices/' + id);
@@ -24,15 +24,22 @@ export function RemoteDesktop({ id }: { id: string }) {
   const [touchMode, setTouchMode] = useState<TouchMode>(loadTouchMode);
   const [help, setHelp] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const sinkRef = useRef<VideoSink | null>(null);
+  const rtcRef = useRef<RTCLink | null>(null);
+  const [path, setPath] = useState<'connecting' | 'direct' | 'relay'>('relay');
   const size = useRef({ w: 0, h: 0 });
   const [status, setStatus] = useState<'starting' | 'connecting' | 'live' | 'ended'>('starting');
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [displays, setDisplays] = useState<Display[]>([]);
   const [display, setDisplay] = useState(0);
-  const [quality, setQuality] = useState(() => { try { return localStorage.getItem('apex-rd-quality') || 'balanced'; } catch { return 'balanced'; } });
-  const qualityRef = useRef(quality);
-  qualityRef.current = QUALITY[quality] ? quality : 'balanced';
+  const [settings, setSettingsState] = useState<StreamSettings>(loadSettings);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const [showSettings, setShowSettings] = useState(false);
+  const [agentStats, setAgentStats] = useState<AgentStats | null>(null);
+  const [notice, setNotice] = useState('');
+  const vcRef = useRef(false);
   const [link, setLink] = useState<FileLink | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -72,31 +79,54 @@ export function RemoteDesktop({ id }: { id: string }) {
       }
       if (closed) return;
       setStatus('connecting');
+      const vc = await h264Supported();
+      vcRef.current = vc;
+      if (closed) return;
       const ws = new WebSocket(wsUrl(`/ws/desktop/${sid}`));
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
       let queue = Promise.resolve();
       let files: FileLink | null = null;
+      const video = new VideoSink(
+        () => canvas.current,
+        (seq) => { frames++; if (ws.readyState === 1) ws.send(`{"t":"vack","i":${seq}}`); },
+        () => { if (ws.readyState === 1) ws.send('{"t":"key"}'); },
+      );
+      sinkRef.current = video;
+      const rtc = new RTCLink(
+        (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); },
+        () => canvas.current,
+        () => { frames++; },
+        (p) => setPath(p),
+      );
+      rtcRef.current = rtc;
       ws.onmessage = (ev) => {
         if (typeof ev.data === 'string') {
           const m = JSON.parse(ev.data);
           if (files && files.handle(m)) return;
+          if (rtc.handle(m)) return;
           if (m.t === 'hello') {
             setDisplays(m.displays || []);
             setDisplay(m.display || 0);
             setWarning(m.warning || '');
-            const qv = QUALITY[qualityRef.current];
-            ws.send(JSON.stringify({ t: 'opt', ...qv }));
+            ws.send(JSON.stringify(optMessage(settingsRef.current, vc)));
             if (m.files && !files) {
               files = new FileLink(ws);
               setLink(files);
             }
             setStatus('live');
+            const st = settingsRef.current;
+            if (vc && st.mode === 'auto' && st.direct && RTCLink.supported() && !rtc.isLive) rtc.start().catch(() => setPath('relay'));
           } else if (m.t === 'size') {
             size.current = { w: m.w, h: m.h };
             const c = canvas.current!;
             c.width = m.w;
             c.height = m.h;
+            if (m.video) video.reset();
+          } else if (m.t === 'stats') {
+            setAgentStats(m);
+          } else if (m.t === 'notice') {
+            setNotice(m.text);
           } else if (m.t === 'error') {
             setError(m.error);
           }
@@ -105,6 +135,10 @@ export function RemoteDesktop({ id }: { id: string }) {
         bytes += ev.data.byteLength;
         const buf = ev.data as ArrayBuffer;
         if (files && files.chunk(buf)) return;
+        if (new Uint8Array(buf, 0, 1)[0] === 3) {
+          video.push(buf);
+          return;
+        }
         // decode sequentially so tiles land in order
         queue = queue.then(() => drawFrame(buf)).then(() => {
           frames++;
@@ -112,7 +146,9 @@ export function RemoteDesktop({ id }: { id: string }) {
         }).catch(() => {});
       };
       ws.onclose = () => {
+        rtc.destroy();
         files?.close();
+        video.close();
         if (!closed) setStatus('ended');
       };
     })();
@@ -170,6 +206,8 @@ export function RemoteDesktop({ id }: { id: string }) {
     return () => {
       closed = true;
       setLink(null);
+      rtcRef.current?.destroy();
+      rtcRef.current = null;
       clearInterval(statTimer);
       wsRef.current?.close();
       wsRef.current = null;
@@ -178,6 +216,7 @@ export function RemoteDesktop({ id }: { id: string }) {
 
   // ----- input -----
   const send = (m: any) => {
+    if (rtcRef.current?.sendInput(m)) return; // direct path: skip the server
     const ws = wsRef.current;
     if (ws && ws.readyState === 1) ws.send(JSON.stringify(m));
   };
@@ -268,10 +307,15 @@ export function RemoteDesktop({ id }: { id: string }) {
     } catch {}
   }, [status]);
 
-  const setQ = (q: string) => {
-    setQuality(q);
-    try { localStorage.setItem('apex-rd-quality', q); } catch {}
-    send({ t: 'opt', ...QUALITY[q] });
+  const updateSettings = (patch: Partial<StreamSettings>) => {
+    const s = { ...settingsRef.current, ...patch };
+    setSettingsState(s);
+    saveSettings(s);
+    send(optMessage(s, vcRef.current));
+    if ('direct' in patch) {
+      if (s.direct && vcRef.current && RTCLink.supported()) rtcRef.current?.start().catch(() => setPath('relay'));
+      else { rtcRef.current?.stop(); setPath('relay'); }
+    }
   };
   // Drag files from this computer onto the remote screen to upload them.
   const hasFiles = (e: DragEvent) => !!link && !!e.dataTransfer?.types.includes('Files');
@@ -303,7 +347,11 @@ export function RemoteDesktop({ id }: { id: string }) {
           <Icon name="pointer" size={16} />
           <strong>{name}</strong>
           <span class={'rd-status ' + status}><span class="dot" />{status === 'live' ? 'Live' : status === 'ended' ? 'Disconnected' : 'Connecting…'}</span>
-          {status === 'live' && <span class="muted small mono">{stats.fps} fps · {stats.kbps > 1000 ? (stats.kbps / 1000).toFixed(1) + ' Mbps' : stats.kbps + ' kbps'}</span>}
+          {status === 'live' && (
+            <button class="rd-statline mono" onClick={() => setShowSettings(!showSettings)} title="Stream details and settings">
+              {agentStats?.mode === 'h264' ? 'H.264' : 'Images'}{path === 'direct' ? ' · direct' : ''} · {stats.fps} fps · {fmtRate(stats.kbps)}{agentStats && agentStats.rtt > 0 ? ` · ${agentStats.rtt} ms` : ''}
+            </button>
+          )}
         </div>
         <div class="rd-tools">
           {displays.length > 1 && (
@@ -316,11 +364,7 @@ export function RemoteDesktop({ id }: { id: string }) {
               {touch ? (activeTransfers ? String(activeTransfers) : '') : activeTransfers ? `Files (${activeTransfers})` : 'Files'}
             </Button>
           )}
-          <select value={quality} onChange={(e) => setQ((e.target as HTMLSelectElement).value)} title="Quality">
-            <option value="low">Low bandwidth</option>
-            <option value="balanced">Balanced</option>
-            <option value="high">High quality</option>
-          </select>
+          <Button size="sm" variant="ghost" icon="settings" class={showSettings ? 'rd-capture on' : ''} onClick={() => setShowSettings(!showSettings)} title="Frame rate, bandwidth and resolution">{touch ? '' : 'Stream'}</Button>
           {!touch && <Button size="sm" variant="ghost" icon={fit ? 'maximize' : 'devices'} onClick={() => setFit(!fit)}>{fit ? 'Fit' : '1:1'}</Button>}
           {!touch && <Button size="sm" variant="ghost" icon="keyboard" onClick={() => send({ t: 'cad' })} title="Send Ctrl+Alt+Del">Ctrl+Alt+Del</Button>}
           <Button size="sm" variant="ghost" icon="copy" onClick={() => setPaste(true)} title="Type text on the remote device">{touch ? '' : 'Paste text'}</Button>
@@ -339,6 +383,10 @@ export function RemoteDesktop({ id }: { id: string }) {
         </div>
       </header>
       {warning && <div class="rd-warn"><Icon name="alert" size={16} /> {warning}</div>}
+      {notice && <div class="rd-warn"><Icon name="info" size={16} /> {notice} <button class="rd-link" onClick={() => setNotice('')}>Dismiss</button></div>}
+      {showSettings && (
+        <StreamPanel settings={settings} stats={agentStats} path={path} viewerFps={stats.fps} vc={vcRef.current} onChange={updateSettings} onClose={() => { setShowSettings(false); canvas.current?.focus(); }} />
+      )}
       <div class="rd-main">
       <div ref={stage} class={'rd-stage ' + (fitMode ? 'fit' : 'actual') + (touch ? ' touch' : '')}
         onDragOver={stageDragOver} onDragLeave={() => setDragOver(false)} onDrop={stageDrop}>
@@ -382,5 +430,69 @@ function PasteModal({ onClose, onSend }: { onClose: () => void; onSend: (t: stri
       <p class="muted small">The text is typed as keystrokes into the focused window on the device.</p>
       <textarea rows={6} value={text} onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} autoFocus />
     </Modal>
+  );
+}
+
+function fmtRate(kbps: number) {
+  return kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbit/s' : Math.round(kbps) + ' kbit/s';
+}
+
+function StreamPanel({ settings, stats, path, viewerFps, vc, onChange, onClose }: {
+  settings: StreamSettings; stats: AgentStats | null; path: string; viewerFps: number; vc: boolean;
+  onChange: (p: Partial<StreamSettings>) => void; onClose: () => void;
+}) {
+  const video = stats?.mode === 'h264';
+  let why = '';
+  if (settings.mode === 'images') why = 'Images mode selected.';
+  else if (!vc) why = "This browser can't decode H.264 video (WebCodecs), so images are used.";
+  else if (stats && !video) why = stats.codec === 'downloading' ? 'The device is downloading the video encoder; video starts automatically when it is ready.' : `Video unavailable on the device: ${stats.codec || 'starting'}.`;
+  return (
+    <div class="rd-stream" onKeyDown={(e) => e.stopPropagation()}>
+      <div class="rd-stream-head">
+        <strong>Stream</strong>
+        <button class="rd-icon-btn" onClick={onClose} title="Close"><Icon name="x" size={15} /></button>
+      </div>
+      <label>Frame rate
+        <div class="rd-seg">
+          {FPS_OPTIONS.map((f) => <button key={f} class={settings.fps === f ? 'on' : ''} onClick={() => onChange({ fps: f })}>{f}</button>)}
+        </div>
+      </label>
+      <label>Bandwidth
+        <select value={settings.bw} onChange={(e) => onChange({ bw: +(e.target as HTMLSelectElement).value })}>
+          {BW_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </label>
+      <label>Resolution
+        <div class="rd-seg">
+          {SCALE_OPTIONS.map(([v, l]) => <button key={v} class={settings.scale === v ? 'on' : ''} onClick={() => onChange({ scale: v })}>{l}</button>)}
+        </div>
+      </label>
+      <label>Encoding
+        <div class="rd-seg">
+          <button class={settings.mode === 'auto' ? 'on' : ''} onClick={() => onChange({ mode: 'auto' })}>Video (H.264)</button>
+          <button class={settings.mode === 'images' ? 'on' : ''} onClick={() => onChange({ mode: 'images' })}>Images</button>
+        </div>
+      </label>
+      <label>Connection
+        <div class="rd-seg">
+          <button class={settings.direct ? 'on' : ''} onClick={() => onChange({ direct: true })}>Direct when possible</button>
+          <button class={!settings.direct ? 'on' : ''} onClick={() => onChange({ direct: false })}>Via server</button>
+        </div>
+      </label>
+      {why && <p class="rd-stream-why">{why}</p>}
+      {stats && (
+        <table class="rd-stream-stats">
+          <tbody>
+            <tr><td>Showing</td><td>{viewerFps} fps (device sends {stats.fps.toFixed(0)})</td></tr>
+            <tr><td>Bandwidth</td><td>{fmtRate(stats.kbps)}{video ? ` (target ${fmtRate(stats.target)}${stats.congested ? ', reduced: the connection is busy' : ''})` : ''}</td></tr>
+            <tr><td>Path</td><td>{path === 'direct' ? 'Direct (WebRTC)' : path === 'connecting' ? 'Trying a direct connection…' : 'Via the Apex server'}</td></tr>
+            <tr><td>Round trip</td><td>{stats.rtt ? stats.rtt + ' ms' : '–'}</td></tr>
+            <tr><td>Capture</td><td>{stats.cap.toFixed(1)} ms ({stats.capture})</td></tr>
+            <tr><td>Encode</td><td>{stats.enc.toFixed(1)} ms</td></tr>
+          </tbody>
+        </table>
+      )}
+      <p class="rd-stream-why">Automatic bandwidth lowers quality when the connection gets busy and raises it again when there's room. A still screen sends almost nothing, so the frame rate drops when nothing moves.</p>
+    </div>
   );
 }
