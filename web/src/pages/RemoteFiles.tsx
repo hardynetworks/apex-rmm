@@ -85,26 +85,75 @@ export class FileLink {
     this.emit();
   }
 
-  upload(files: File[], dir: string) {
+  /** Queues uploads into dir (or its sub-folder sub); resolves with the paths saved on the device. */
+  upload(files: File[], dir: string, sub = ''): Promise<(string | null)[]> {
+    const results: Promise<string | null>[] = [];
     for (const file of files) {
       const id = this.seq++;
-      this.transfers.unshift({ id, dir: 'up', name: file.name, size: file.size, done: 0, state: 'waiting' });
-      this.upQueue = this.upQueue.then(() => this.runUpload(id, file, dir)).catch(() => {});
+      this.transfers.unshift({ id, dir: 'up', name: sub ? sub + '/' + file.name : file.name, size: file.size, done: 0, state: 'waiting' });
+      const p = this.upQueue.then(() => this.runUpload(id, file, dir, sub)).catch(() => null);
+      this.upQueue = p.then(() => {});
+      results.push(p);
     }
     this.emit();
+    return Promise.all(results);
   }
 
-  private async runUpload(id: number, file: File, dir: string) {
+  /**
+   * Uploads dropped files and folders (rel = path inside the drop, e.g. "Photos/2024/a.jpg").
+   * Each dropped folder is created first (renamed "Photos (1)" if it exists). Resolves with the
+   * top-level paths created on the device.
+   */
+  async uploadTree(items: { file: File; rel: string }[], dir: string): Promise<string[]> {
+    const top: string[] = [];
+    const loose = items.filter((i) => !i.rel.includes('/')).map((i) => i.file);
+    const folders = new Map<string, { file: File; rel: string }[]>();
+    for (const i of items) {
+      if (!i.rel.includes('/')) continue;
+      const [head, ...rest] = i.rel.split('/');
+      if (!folders.has(head)) folders.set(head, []);
+      folders.get(head)!.push({ file: i.file, rel: rest.join('/') });
+    }
+    const jobs: Promise<unknown>[] = [];
+    if (loose.length) jobs.push(this.upload(loose, dir).then((r) => r.forEach((p) => p && top.push(p))));
+    for (const [name, list] of folders) {
+      const made = await this.request({ t: 'fmkdir', path: dir, name });
+      top.push(made.path);
+      const bySub = new Map<string, File[]>();
+      for (const f of list) {
+        const sub = f.rel.split('/').slice(0, -1).join('/');
+        if (!bySub.has(sub)) bySub.set(sub, []);
+        bySub.get(sub)!.push(f.file);
+      }
+      for (const [sub, files] of bySub) jobs.push(this.upload(files, made.path, sub));
+    }
+    await Promise.all(jobs);
+    return top;
+  }
+
+  private reqs = new Map<number, { resolve: (m: any) => void; reject: (e: Error) => void }>();
+  /** Sends a request (fdrop, fmkdir, fclip) and waits for the agent's answer with the same id. */
+  request(m: any, timeout = 15000): Promise<any> {
+    const id = this.seq++;
+    return new Promise((resolve, reject) => {
+      if (this.closed) return reject(new Error('Session ended'));
+      const timer = setTimeout(() => { this.reqs.delete(id); reject(new Error('The device did not answer')); }, timeout);
+      this.reqs.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
+      this.send({ ...m, id });
+    });
+  }
+
+  private async runUpload(id: number, file: File, dir: string, sub = ''): Promise<string | null> {
     const t = this.t(id);
-    if (!t || t.state !== 'waiting') return;
-    if (this.closed) return this.update(id, { state: 'error', error: 'Session ended' });
+    if (!t || t.state !== 'waiting') return null;
+    if (this.closed) { this.update(id, { state: 'error', error: 'Session ended' }); return null; }
     const u: Up = { acked: 0, wake: null };
     this.ups.set(id, u);
     this.update(id, { state: 'active' });
     try {
       const path = await new Promise<string>((resolve, reject) => {
         u.ready = { resolve, reject };
-        this.send({ t: 'fput', id, path: dir, name: file.name, size: file.size });
+        this.send({ t: 'fput', id, path: dir, sub, name: file.name, size: file.size });
       });
       this.update(id, { path, name: path.split(/[\\/]/).pop() || file.name }); // the device may rename it ("name (1).ext")
       const done = new Promise<string>((resolve, reject) => { u.finished = { resolve, reject }; });
@@ -112,7 +161,7 @@ export class FileLink {
       let off = 0;
       while (off < file.size) {
         while (!u.cancelled && !this.closed && off - u.acked >= WINDOW) await new Promise<void>((r) => (u.wake = r));
-        if (u.cancelled || this.closed) return;
+        if (u.cancelled || this.closed) return null;
         const data = new Uint8Array(await file.slice(off, off + CHUNK).arrayBuffer());
         const msg = new Uint8Array(5 + data.byteLength);
         msg[0] = TAG_UP;
@@ -124,8 +173,10 @@ export class FileLink {
       this.send({ t: 'fend', id });
       const final = await done;
       this.update(id, { state: 'done', done: file.size, path: final });
+      return final;
     } catch (e: any) {
       if (!u.cancelled) this.update(id, { state: 'error', error: e.message });
+      return null;
     } finally {
       this.ups.delete(id);
     }
@@ -187,8 +238,24 @@ export class FileLink {
         this.ups.get(m.id)?.finished?.resolve(m.path);
         return true;
       }
+      case 'fdrop':
+      case 'fmkdir':
+      case 'fclip': {
+        const r = this.reqs.get(m.id);
+        if (!r) return false;
+        this.reqs.delete(m.id);
+        if (m.t === 'fclip' && !m.ok) r.reject(new Error(m.error || 'failed'));
+        else r.resolve(m);
+        return true;
+      }
       case 'ferr': {
         const err = new Error(m.error || 'failed');
+        const q = this.reqs.get(m.id);
+        if (q) {
+          this.reqs.delete(m.id);
+          q.reject(err);
+          return true;
+        }
         const l = this.lists.get(m.id);
         if (l) {
           this.lists.delete(m.id);
@@ -223,6 +290,8 @@ export class FileLink {
 
   close() {
     this.closed = true;
+    this.reqs.forEach((r) => r.reject(new Error('Session ended')));
+    this.reqs.clear();
     this.lists.forEach((l) => l.reject(new Error('Session ended')));
     this.lists.clear();
     this.ups.forEach((u) => { u.wake?.(); u.ready?.reject(new Error('Session ended')); u.finished?.reject(new Error('Session ended')); });
@@ -307,7 +376,9 @@ export function FilesPanel({ link, onClose }: { link: FileLink; onClose: () => v
     e.preventDefault();
     e.stopPropagation();
     setDrag(false);
-    upload(e.dataTransfer?.files || null);
+    if (!e.dataTransfer || !listing) return;
+    const dir = listing.path;
+    droppedItems(e.dataTransfer).then((items) => { if (items.length) return link.uploadTree(items, dir); }).catch(() => {});
   };
 
   const sep = listing?.sep || '/';
@@ -387,4 +458,26 @@ function TransferRow({ t, onCancel }: { t: Transfer; onCancel: () => void }) {
       {live ? <button class="rd-icon-btn" onClick={onCancel} title="Cancel"><Icon name="x" size={13} /></button> : t.state === 'done' ? <Icon name="check" size={14} class="ok" /> : null}
     </div>
   );
+}
+
+/** Files and folders from a drop, with their paths inside the drop ("Photos/2024/a.jpg"). */
+export async function droppedItems(dt: DataTransfer): Promise<{ file: File; rel: string }[]> {
+  const entries = Array.from(dt.items || []).map((i) => (i as any).webkitGetAsEntry?.()).filter(Boolean);
+  if (!entries.length) return Array.from(dt.files).map((file) => ({ file, rel: file.name }));
+  const out: { file: File; rel: string }[] = [];
+  const walk = async (entry: any, prefix: string): Promise<void> => {
+    if (entry.isFile) {
+      const file: File = await new Promise((res, rej) => entry.file(res, rej));
+      out.push({ file, rel: prefix + file.name });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (;;) {
+        const batch: any[] = await new Promise((res, rej) => reader.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const e of batch) await walk(e, prefix + entry.name + '/');
+      }
+    }
+  };
+  for (const e of entries) await walk(e, '');
+  return out;
 }

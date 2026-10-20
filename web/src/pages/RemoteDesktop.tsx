@@ -4,7 +4,7 @@ import { Icon } from '../icons';
 import { Button, Modal, deviceName, useFetch } from '../ui';
 import { TouchControls, TouchHelp, TouchMode, isTouchDevice, loadTouchMode } from './RemoteTouch';
 import { native } from '../native';
-import { FileLink, FilesPanel, useTransfers } from './RemoteFiles';
+import { FileLink, FilesPanel, droppedItems, useTransfers } from './RemoteFiles';
 import { RTCLink } from './RemoteRTC';
 import { StreamSettings, VideoSink, h264Supported, loadSettings, optMessage, saveSettings } from './RemoteVideo';
 
@@ -44,6 +44,33 @@ export function RemoteDesktop({ id }: { id: string }) {
   const [filesOpen, setFilesOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const transfers = useTransfers(link);
+  const linkRef = useRef(link);
+  linkRef.current = link;
+  const remoteOs = useRef('');
+  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
+  const toast = (text: string, ms = 5000) => {
+    const id = Math.random();
+    setToasts((t) => [...t.slice(-2), { id, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), ms);
+  };
+  const pendingClip = useRef<string | null>(null);
+  // Remote → local clipboard. Browsers only allow it while the page has focus, so a copy that
+  // arrives while you're elsewhere is written on your next click or key press here.
+  const writeClip = (text: string) => {
+    if (!settingsRef.current.clip || !navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(text).then(() => { pendingClip.current = null; }).catch(() => { pendingClip.current = text; });
+  };
+  useEffect(() => {
+    const flush = () => { const t = pendingClip.current; if (t != null) writeClip(t); };
+    window.addEventListener('pointerdown', flush, true);
+    window.addEventListener('keydown', flush, true);
+    window.addEventListener('focus', flush);
+    return () => {
+      window.removeEventListener('pointerdown', flush, true);
+      window.removeEventListener('keydown', flush, true);
+      window.removeEventListener('focus', flush);
+    };
+  }, []);
   const activeTransfers = transfers.filter((t) => t.state === 'active' || t.state === 'waiting').length;
   const [fit, setFit] = useState(true);
   const fitMode = touch || fit;
@@ -105,7 +132,12 @@ export function RemoteDesktop({ id }: { id: string }) {
           const m = JSON.parse(ev.data);
           if (files && files.handle(m)) return;
           if (rtc.handle(m)) return;
+          if (m.t === 'clip') {
+            writeClip(m.text || '');
+            return;
+          }
           if (m.t === 'hello') {
+            remoteOs.current = m.os || '';
             setDisplays(m.displays || []);
             setDisplay(m.display || 0);
             setWarning(m.warning || '');
@@ -251,14 +283,38 @@ export function RemoteDesktop({ id }: { id: string }) {
       if (notches !== 0) { acc -= notches * 60; send({ t: 'wh', dx: 0, dy: Math.max(-5, Math.min(5, notches)) }); }
     };
     const cm = (e: Event) => e.preventDefault();
+    // Ctrl/Cmd+V: let the browser fire its paste event so we get this computer's clipboard
+    // (text goes to the remote clipboard first, files are uploaded), then press V remotely.
+    let pasteTimer = 0;
     const kd = (e: KeyboardEvent) => {
       if (document.activeElement !== c) return;
+      if (settingsRef.current.clip && (e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyV') {
+        clearTimeout(pasteTimer);
+        pasteTimer = window.setTimeout(() => { pasteTimer = 0; sendPasteKeys(); }, 250);
+        return;
+      }
       e.preventDefault();
       send({ t: 'kd', code: e.code });
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      if (document.activeElement !== c || !settingsRef.current.clip) return;
+      e.preventDefault();
+      if (!pasteTimer) return; // not from our Ctrl+V (e.g. a context menu): ignore
+      clearTimeout(pasteTimer);
+      pasteTimer = 0;
+      const files = Array.from(e.clipboardData?.files || []);
+      if (files.length && linkRef.current) {
+        pasteFiles(files);
+        return;
+      }
+      const text = e.clipboardData?.getData('text/plain') || '';
+      if (text) send({ t: 'clip', text });
+      sendPasteKeys();
     };
     const ku = (e: KeyboardEvent) => {
       if (document.activeElement !== c) return;
       e.preventDefault();
+      if (e.code === 'KeyV' && (e.ctrlKey || e.metaKey) && settingsRef.current.clip) return; // sent with the paste
       send({ t: 'ku', code: e.code });
     };
     const blur = () => ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].forEach((code) => send({ t: 'ku', code }));
@@ -270,6 +326,7 @@ export function RemoteDesktop({ id }: { id: string }) {
     c.addEventListener('blur', blur);
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
+    window.addEventListener('paste', onPaste);
     c.focus();
     return () => {
       c.removeEventListener('mousemove', mm);
@@ -280,8 +337,42 @@ export function RemoteDesktop({ id }: { id: string }) {
       c.removeEventListener('blur', blur);
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
+      window.removeEventListener('paste', onPaste);
+      clearTimeout(pasteTimer);
     };
   }, [status]);
+
+  // V with the paste modifier the remote computer expects (Cmd on a Mac, Ctrl elsewhere).
+  const sendPasteKeys = () => {
+    const localMac = /Mac|iPhone|iPad/.test(navigator.platform);
+    const remoteMac = remoteOs.current === 'darwin';
+    const seq: [string, string][] = localMac && !remoteMac
+      ? [['ku', 'MetaLeft'], ['kd', 'ControlLeft'], ['kd', 'KeyV'], ['ku', 'KeyV'], ['ku', 'ControlLeft']]
+      : !localMac && remoteMac
+        ? [['ku', 'ControlLeft'], ['kd', 'MetaLeft'], ['kd', 'KeyV'], ['ku', 'KeyV'], ['ku', 'MetaLeft']]
+        : [['kd', 'KeyV'], ['ku', 'KeyV']];
+    seq.forEach(([t, code]) => send({ t, code }));
+  };
+
+  // Files pasted with Ctrl+V: into the Explorer/Finder folder that has focus on the remote
+  // computer, or into the focused program through the remote clipboard.
+  const pasteFiles = async (files: File[]) => {
+    const l = linkRef.current;
+    if (!l) return;
+    try {
+      const target = await l.request({ t: 'fdrop', fg: true, x: 0, y: 0 });
+      toast(`Copying ${files.length === 1 ? files[0].name : files.length + ' files'} to ${target.label}…`);
+      const paths = await l.uploadTree(files.map((file) => ({ file, rel: file.name })), target.path);
+      if (target.kind === 'app' && remoteOs.current === 'windows' && paths.length) {
+        await l.request({ t: 'fclip', paths, paste: true });
+        toast(`Pasted into ${target.label} (also saved in Downloads)`);
+      } else {
+        toast(`Copied to ${target.path}`);
+      }
+    } catch (err: any) {
+      toast(`Paste failed: ${err.message}`);
+    }
+  };
 
   // Desktop app: it captures shortcuts Windows would otherwise keep (Win, Alt+Tab, Ctrl+Esc …)
   // and hands them to us here.
@@ -318,17 +409,41 @@ export function RemoteDesktop({ id }: { id: string }) {
     }
   };
   // Drag files from this computer onto the remote screen to upload them.
+  // Files and folders land where they're dropped: in the Explorer/Finder folder under the
+  // pointer, on the desktop, or (over another program) in Downloads and on the remote clipboard.
   const hasFiles = (e: DragEvent) => !!link && !!e.dataTransfer?.types.includes('Files');
-  const stageDragOver = (e: DragEvent) => { if (hasFiles(e)) { e.preventDefault(); setDragOver(true); } };
-  const stageDrop = (e: DragEvent) => {
+  const dragMove = useRef(0);
+  const stageDragOver = (e: DragEvent) => {
     if (!hasFiles(e)) return;
     e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    setDragOver(true);
+    const now = performance.now();
+    if (now - dragMove.current > 60) { // the remote pointer follows, so you can see where it'll land
+      dragMove.current = now;
+      send({ t: 'mm', ...pos(e) });
+    }
+  };
+  const stageDrop = (e: DragEvent) => {
+    if (!hasFiles(e) || !link) return;
+    e.preventDefault();
     setDragOver(false);
-    const files = Array.from(e.dataTransfer!.files);
-    if (!files.length || !link) return;
-    setFilesOpen(true);
-    if (link.cwd) link.upload(files, link.cwd);
-    else link.list('').then((l) => { link.cwd = l.path; link.upload(files, l.path); }).catch(() => link.upload(files, ''));
+    const p = pos(e);
+    send({ t: 'mm', ...p });
+    const l = link;
+    droppedItems(e.dataTransfer!).then(async (items) => {
+      if (!items.length) return;
+      const target = await l.request({ t: 'fdrop', x: p.x, y: p.y });
+      const what = items.length === 1 ? items[0].file.name : items.some((i) => i.rel.includes('/')) ? 'the dropped items' : items.length + ' files';
+      toast(`Copying ${what} to ${target.kind === 'app' ? 'Downloads' : target.label}…`);
+      const paths = await l.uploadTree(items, target.path);
+      if (target.kind === 'app' && remoteOs.current === 'windows' && paths.length) {
+        await l.request({ t: 'fclip', paths }).catch(() => {});
+        toast(`Saved to Downloads and copied to the remote clipboard: click where you want them in ${target.label} and press Ctrl+V.`, 9000);
+      } else {
+        toast(`Copied to ${target.path}`);
+      }
+    }).catch((err) => toast(`Upload failed: ${err.message}`));
   };
   const pickDisplay = (i: number) => {
     setDisplay(i);
@@ -383,6 +498,7 @@ export function RemoteDesktop({ id }: { id: string }) {
         </div>
       </header>
       {warning && <div class="rd-warn"><Icon name="alert" size={16} /> {warning}</div>}
+      {toasts.length > 0 && <div class="rd-toasts">{toasts.map((t) => <div key={t.id} class="rd-toast">{t.text}</div>)}</div>}
       {notice && <div class="rd-warn"><Icon name="info" size={16} /> {notice} <button class="rd-link" onClick={() => setNotice('')}>Dismiss</button></div>}
       {showSettings && (
         <StreamPanel settings={settings} stats={agentStats} path={path} viewerFps={stats.fps} vc={vcRef.current} onChange={updateSettings} onClose={() => { setShowSettings(false); canvas.current?.focus(); }} />
@@ -391,7 +507,7 @@ export function RemoteDesktop({ id }: { id: string }) {
       <div ref={stage} class={'rd-stage ' + (fitMode ? 'fit' : 'actual') + (touch ? ' touch' : '')}
         onDragOver={stageDragOver} onDragLeave={() => setDragOver(false)} onDrop={stageDrop}>
         <canvas ref={canvas} tabIndex={0} class={status === 'live' ? '' : 'hidden'} />
-        {dragOver && <div class="rd-drop"><Icon name="upload" size={32} /><span>Drop to upload to the remote device{link?.cwd ? <><br /><b>{link.cwd}</b></> : ' (home folder)'}</span></div>}
+        {dragOver && <div class="rd-drop"><Icon name="upload" size={32} /><span>Drop to copy here on the remote computer<br /><small>into the folder or desktop under the pointer</small></span></div>}
         {status !== 'live' && (
           <div class="rd-overlay">
             {error ? (
@@ -471,6 +587,12 @@ function StreamPanel({ settings, stats, path, viewerFps, vc, onChange, onClose }
         <div class="rd-seg">
           <button class={settings.mode === 'auto' ? 'on' : ''} onClick={() => onChange({ mode: 'auto' })}>Video (H.264)</button>
           <button class={settings.mode === 'images' ? 'on' : ''} onClick={() => onChange({ mode: 'images' })}>Images</button>
+        </div>
+      </label>
+      <label>Clipboard
+        <div class="rd-seg">
+          <button class={settings.clip ? 'on' : ''} onClick={() => onChange({ clip: true })}>Shared</button>
+          <button class={!settings.clip ? 'on' : ''} onClick={() => onChange({ clip: false })}>Off</button>
         </div>
       </label>
       <label>Connection

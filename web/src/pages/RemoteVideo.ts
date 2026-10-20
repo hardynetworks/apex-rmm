@@ -9,9 +9,10 @@ export type StreamSettings = {
   bw: number; // kbit/s limit, 0 = automatic
   scale: number; // 1, 0.75, 0.5
   direct: boolean; // try WebRTC for a direct path
+  clip: boolean; // share the clipboard with the remote computer
 };
 
-export const DEFAULT_SETTINGS: StreamSettings = { mode: 'auto', fps: 60, bw: 0, scale: 1, direct: true };
+export const DEFAULT_SETTINGS: StreamSettings = { mode: 'auto', fps: 60, bw: 0, scale: 1, direct: true, clip: true };
 
 export function loadSettings(): StreamSettings {
   try {
@@ -29,7 +30,7 @@ export function saveSettings(s: StreamSettings) {
 /** The "opt" message for the agent. vc = this viewer can decode H.264. */
 export function optMessage(s: StreamSettings, vc: boolean) {
   const q = s.bw === 0 ? 65 : s.bw < 3000 ? 40 : s.bw < 10000 ? 60 : 80; // JPEG quality for image mode
-  return { t: 'opt', q, s: s.scale, fps: s.fps, v: 2, vc, bw: s.bw, mode: s.mode };
+  return { t: 'opt', q, s: s.scale, fps: s.fps, v: 2, vc, bw: s.bw, mode: s.mode, clip: s.clip };
 }
 
 let support: Promise<boolean> | null = null;
