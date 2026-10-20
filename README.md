@@ -158,7 +158,7 @@ Click **Remote control** on a device. A pop-up viewer opens and the agent launch
 | **macOS 12+** | Helper runs in the console user's GUI session via `launchctl asuser`, CoreGraphics capture and `CGEvent` input (via purego, no cgo). | Grant **Screen Recording** and **Accessibility** to `/usr/local/apex-agent/apex-agent` in System Settings → Privacy & Security, or push a PPPC profile with your MDM. Because the binary is unsigned, re-approve after an agent update (or sign it with your Developer ID). |
 | **Linux** | Finds the running Xorg server and its auth cookie, captures with X11 `GetImage`, injects input with XTEST. Works on the login screen too. | An **Xorg** session. Wayland isn't supported by the built-in viewer — pick "Ubuntu on Xorg" at login, set `WaylandEnable=false` in `/etc/gdm3/custom.conf`, or use RustDesk. |
 
-Viewer features: multi-monitor switching, quality presets (bandwidth-adaptive with flow control), fit / 1:1 scaling, paste-as-keystrokes, Ctrl+Alt+Del, full screen, live fps/bitrate, file transfer. Every session is written to the audit log.
+Viewer features: multi-monitor switching, quality presets (bandwidth-adaptive with flow control), fit / 1:1 scaling, paste-as-keystrokes, Ctrl+Alt+Del, full screen, live fps/bitrate, shared clipboard, drag-and-drop file upload, file transfer. Every session is written to the audit log.
 
 **Video (H.264).** When the browser supports it (Chrome, Edge, Firefox 130+, Safari 16.4+, and the desktop app), the screen is streamed as H.264 video, which needs far less bandwidth than images: a scrolling page at 1080p takes well under 1 Mbit/s. The agent encodes with Cisco's **OpenH264**, which it downloads from Cisco the first time it starts (about 1 MB, checked against a pinned SHA-256; Cisco's license covers the H.264 patents only for binaries downloaded from them, so it can't be bundled). The library is stored in `C:\Program Files\ApexRMM\codecs`, `/usr/local/apex-agent/codecs` or `/var/lib/apex-agent/codecs`. If the download is blocked, or on 32-bit ARM, the viewer uses images instead.
 
@@ -173,14 +173,36 @@ Viewer features: multi-monitor switching, quality presets (bandwidth-adaptive wi
 | Resolution | Full, 75 %, 50 % |
 | Encoding | Video (H.264) or Images |
 | Connection | Direct when possible, or always via the server |
+| Clipboard | Shared or Off |
 
 With **Automatic** bandwidth, the agent measures how fast frames actually arrive. When frames start queueing it lowers quality right away, so the picture stays current instead of lagging seconds behind, and it raises quality again when there's room. The panel also shows the frame rate, bitrate, round trip, path and capture/encode times, which help when a connection feels slow.
 
 **Images mode** sends only the 64-pixel tiles that changed. Scrolling becomes a "move this area" instruction plus the newly exposed strip, flat areas become solid fills, and busy screens go out at lower quality first and are re-sent sharp a moment later.
 
+### Copy and paste
+
+With **Stream → Clipboard → Shared** (the default) the clipboard works both ways:
+
+- **Remote → local:** whatever is copied on the remote computer lands on your clipboard automatically (text, up to 1 MB). If the browser won't allow it right then, it is written the next time you click or type in the viewer.
+- **Local → remote:** press **Ctrl+V** (**⌘V** on a Mac) in the viewer. Copied text is put on the remote clipboard and pasted where the cursor is. Copied **files** are uploaded and pasted too: into the Explorer/Finder folder or desktop that's in front, or, for any other program on Windows, saved to Downloads and pasted into the program (an email, Teams chat, etc.).
+
+Turn it **Off** for devices where clipboard contents shouldn't cross over.
+
+### Drag and drop onto the remote screen
+
+Drag files or whole folders from your computer straight onto the remote screen. The pointer follows your drag, and the files are uploaded to whatever is under it when you let go:
+
+| Dropped on | Goes to |
+|---|---|
+| An Explorer (Windows) or Finder (macOS) window | The folder that window shows (the open tab on Windows 11) |
+| The desktop | The user's Desktop folder |
+| Any other program | The user's Downloads folder; on Windows the files are also put on the remote clipboard, so Ctrl+V pastes them into that program |
+
+Folders keep their structure, nothing is overwritten (`Photos` becomes `Photos (1)`), and each upload shows progress and a note saying where it went. On macOS the first drop onto Finder asks the user once to allow Apex to control Finder. On Linux, file managers don't say which folder they show, so drops go to the Desktop folder (or home). Files on the clipboard are Windows only; text works on every system (X11 on Linux, not Wayland).
+
 ### File transfer
 
-Click **Files** in the viewer to browse the remote computer, starting in the signed-in user's home folder (with a drive picker on Windows). Click a file to download it; use **Upload** or drag files from your computer onto the panel or straight onto the remote screen to upload into the open folder. Uploads never overwrite: an existing name becomes `name (1).ext`. Transfers show progress and can be cancelled (a cancelled upload is deleted from the device). Anyone allowed to remote-control a device (technician and up) can transfer files. Files go through the same session as the screen (encrypted when you use HTTPS), the helper runs as SYSTEM/root so any folder is reachable, and uploaded files on macOS/Linux are given to the signed-in user. Every upload and download is written to the audit log with its path.
+Click **Files** in the viewer to browse the remote computer, starting in the signed-in user's home folder (with a drive picker on Windows). Click a file to download it; use **Upload** or drag files and folders from your computer onto the panel to upload into the open folder. Uploads never overwrite: an existing name becomes `name (1).ext`. Transfers show progress and can be cancelled (a cancelled upload is deleted from the device). Anyone allowed to remote-control a device (technician and up) can transfer files. Files go through the same session as the screen (encrypted when you use HTTPS), the helper runs as SYSTEM/root so any folder is reachable, and uploaded files on macOS/Linux are given to the signed-in user. Every upload and download is written to the audit log with its path.
 
 ### On a phone or tablet
 
