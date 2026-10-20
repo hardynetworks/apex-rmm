@@ -118,6 +118,11 @@ func (s *x11Screen) fake(typ byte, detail byte, x, y int16) {
 	xtest.FakeInput(s.conn, typ, detail, 0, s.root, x, y, 0)
 }
 
+func (s *x11Screen) Global(x, y int) (float64, float64) {
+	d := s.displays[s.cur]
+	return float64(d.X + x), float64(d.Y + y)
+}
+
 func (s *x11Screen) Move(x, y int) {
 	d := s.displays[s.cur]
 	s.fake(xproto.MotionNotify, 0, int16(d.X+clamp(x, 0, d.W-1)), int16(d.Y+clamp(y, 0, d.H-1)))

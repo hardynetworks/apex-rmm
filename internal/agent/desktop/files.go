@@ -36,7 +36,7 @@ const (
 
 func isFileMsg(t string) bool {
 	switch t {
-	case "fls", "fget", "fput", "fend", "fack", "fcancel":
+	case "fls", "fget", "fput", "fend", "fack", "fcancel", "fmkdir":
 		return true
 	}
 	return false
@@ -49,6 +49,7 @@ type fileMsg struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
 	N    int64  `json:"n"`
+	Sub  string `json:"sub"` // upload into this sub-folder of Path (folders dragged from the viewer's computer)
 }
 
 type fileEntry struct {
@@ -159,6 +160,8 @@ func (m *fileManager) control(b []byte) {
 		})
 	case "fput":
 		m.do(func() { m.startUpload(r) })
+	case "fmkdir":
+		m.do(func() { m.mkdir(r) })
 	case "fend":
 		m.do(func() { m.finishUpload(r.ID) })
 	}
@@ -324,6 +327,18 @@ func (m *fileManager) startUpload(r fileMsg) {
 		m.fail(r.ID, errors.New("the destination folder doesn't exist"))
 		return
 	}
+	if r.Sub != "" {
+		sub, err := safeRelative(r.Sub)
+		if err != nil {
+			m.fail(r.ID, err)
+			return
+		}
+		if err := mkdirAllForUser(dir, sub); err != nil {
+			m.fail(r.ID, err)
+			return
+		}
+		dir = filepath.Join(dir, sub)
+	}
 	path, f, err := createUnique(dir, name)
 	if err != nil {
 		m.fail(r.ID, err)
@@ -412,4 +427,73 @@ func userHome() string {
 		}
 	})
 	return homeDir
+}
+
+// mkdir creates a new folder (made unique like files: "Photos (1)") for a dragged-in folder.
+func (m *fileManager) mkdir(r fileMsg) {
+	name := filepath.Base(strings.ReplaceAll(r.Name, "\\", "/"))
+	if name == "." || name == "/" || name == ".." || strings.TrimSpace(name) == "" {
+		m.fail(r.ID, errors.New("invalid folder name"))
+		return
+	}
+	dir := filepath.Clean(r.Path)
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		m.fail(r.ID, errors.New("the destination folder doesn't exist"))
+		return
+	}
+	for i := 0; i < 1000; i++ {
+		n := name
+		if i > 0 {
+			n = name + " (" + itoa(i) + ")"
+		}
+		p := filepath.Join(dir, n)
+		err := os.Mkdir(p, 0o755)
+		if err == nil {
+			giveToUser(p)
+			_ = m.c.json(map[string]any{"t": "fmkdir", "id": r.ID, "path": p, "name": n})
+			return
+		}
+		if !os.IsExist(err) {
+			m.fail(r.ID, err)
+			return
+		}
+	}
+	m.fail(r.ID, errors.New("too many folders with that name"))
+}
+
+// safeRelative cleans a relative path from the viewer, refusing anything that would leave the
+// destination folder.
+func safeRelative(p string) (string, error) {
+	p = strings.ReplaceAll(p, "\\", "/")
+	var parts []string
+	for _, s := range strings.Split(p, "/") {
+		switch s {
+		case "", ".":
+			continue
+		case "..":
+			return "", errors.New("invalid folder path")
+		}
+		if strings.ContainsAny(s, ":") || strings.TrimSpace(s) == "" {
+			return "", errors.New("invalid folder path")
+		}
+		parts = append(parts, s)
+	}
+	if len(parts) == 0 {
+		return "", errors.New("invalid folder path")
+	}
+	return filepath.Join(parts...), nil
+}
+
+// mkdirAllForUser creates base/sub's missing folders, owned by the signed-in user.
+func mkdirAllForUser(base, sub string) error {
+	cur := base
+	for _, part := range strings.Split(sub, string(filepath.Separator)) {
+		cur = filepath.Join(cur, part)
+		if err := os.Mkdir(cur, 0o755); err == nil {
+			giveToUser(cur)
+		} else if !os.IsExist(err) {
+			return err
+		}
+	}
+	return nil
 }

@@ -35,6 +35,12 @@ type inMsg struct {
 	VC   bool    `json:"vc"`   // the viewer can decode H.264
 	BW   int     `json:"bw"`   // bandwidth limit in kbit/s (0 = automatic, -1 = unchanged)
 	Mode string  `json:"mode"` // "images" forces JPEG tiles
+
+	Clip  *bool    `json:"clip"`  // opt: sync the clipboard both ways
+	ID    uint32   `json:"id"`    // fdrop / fclip request id
+	FG    bool     `json:"fg"`    // fdrop: use the foreground window instead of the point (paste)
+	Paths []string `json:"paths"` // fclip: files to put on the clipboard
+	Paste bool     `json:"paste"` // fclip: then press Ctrl+V
 }
 
 // conn serialises writes to the websocket (frames, replies and file chunks come from several goroutines).
@@ -132,6 +138,8 @@ func Run(server, session, token string) error {
 
 	files := newFileManager(c)
 	defer files.close()
+	clips := newClipSync(c)
+	defer clips.close()
 
 	in := make(chan inMsg, 512)
 	done := make(chan struct{})
@@ -154,6 +162,28 @@ func Run(server, session, token string) error {
 			}
 			if isFileMsg(m.T) {
 				files.control(b)
+				continue
+			}
+			if m.T == "clip" { // the viewer's clipboard text
+				clips.fromViewer(m.Text)
+				continue
+			}
+			if m.T == "fclip" {
+				go func(m inMsg) {
+					err := clips.setFiles(m.Paths)
+					reply := map[string]any{"t": "fclip", "id": m.ID, "ok": err == nil}
+					if err != nil {
+						reply["error"] = err.Error()
+					}
+					_ = c.json(reply)
+					if err == nil && m.Paste {
+						time.Sleep(100 * time.Millisecond)
+						select {
+						case in <- inMsg{T: "paste-keys"}:
+						default:
+						}
+					}
+				}(m)
 				continue
 			}
 			if m.T == "rtc-stop" { // the viewer turned the direct path off
@@ -639,6 +669,29 @@ func Run(server, session, token string) error {
 				scr.Wheel(int(m.DX), int(m.DY))
 			case "kd", "ku":
 				scr.Key(m.Code, m.T == "kd")
+			case "fdrop":
+				gx, gy := scr.Global(toScreen(m.X), toScreen(m.Y))
+				go func(id uint32, fg bool) {
+					t, err := resolveDrop(gx, gy, fg)
+					if err != nil {
+						_ = c.json(map[string]any{"t": "ferr", "id": id, "error": err.Error()})
+						return
+					}
+					_ = c.json(map[string]any{"t": "fdrop", "id": id, "path": t.Path, "label": t.Label, "kind": t.Kind})
+				}(m.ID, m.FG)
+				continue
+			case "clip": // over the WebRTC data channel (ordered with the paste keys that follow)
+				clips.fromViewer(m.Text)
+				continue
+			case "paste-keys": // after putting files on the clipboard
+				mod := "ControlLeft"
+				if runtime.GOOS == "darwin" {
+					mod = "MetaLeft"
+				}
+				scr.Key(mod, true)
+				scr.Key("KeyV", true)
+				scr.Key("KeyV", false)
+				scr.Key(mod, false)
 			case "type":
 				scr.Type(m.Text)
 			case "cad":
@@ -655,6 +708,9 @@ func Run(server, session, token string) error {
 				}
 				if m.V >= 2 {
 					proto = 2
+				}
+				if m.Clip != nil {
+					clips.enable(*m.Clip)
 				}
 				wantVideo = m.VC && m.Mode != "images"
 				if m.BW >= 0 {

@@ -255,6 +255,11 @@ func (s *macScreen) post(ev uintptr) {
 	cfRelease(ev)
 }
 
+func (s *macScreen) Global(x, y int) (float64, float64) { // points
+	d := s.displays[s.cur]
+	return float64(d.X) + float64(x)/s.scale, float64(d.Y) + float64(y)/s.scale
+}
+
 func (s *macScreen) Move(x, y int) {
 	d := s.displays[s.cur]
 	s.lastPt = cgPoint{X: float64(d.X) + float64(x)/s.scale, Y: float64(d.Y) + float64(y)/s.scale}

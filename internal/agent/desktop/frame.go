@@ -34,9 +34,10 @@ type Screen interface {
 	Current() int
 	Select(i int) error
 	Capture() (*Frame, error)
-	Move(x, y int)           // pixel coordinates within the captured area
-	Button(b int, down bool) // 0 left, 1 middle, 2 right (DOM numbering)
-	Wheel(dx, dy int)        // notches; dy > 0 scrolls down
+	Move(x, y int)                      // pixel coordinates within the captured area
+	Global(x, y int) (float64, float64) // the same point in the OS's desktop coordinates
+	Button(b int, down bool)            // 0 left, 1 middle, 2 right (DOM numbering)
+	Wheel(dx, dy int)                   // notches; dy > 0 scrolls down
 	Key(code string, down bool)
 	Type(text string)
 	CtrlAltDel()

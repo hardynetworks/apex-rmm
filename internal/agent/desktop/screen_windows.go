@@ -359,6 +359,11 @@ func key(vk, scan uint16, flags uint32) winInput {
 	return in
 }
 
+func (s *winScreen) Global(x, y int) (float64, float64) {
+	d := s.displays[s.cur]
+	return float64(d.X + x), float64(d.Y + y)
+}
+
 func (s *winScreen) Move(x, y int) {
 	s.syncDesktop()
 	d := s.displays[s.cur]
