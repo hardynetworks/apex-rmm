@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,4 +130,12 @@ func powerAction(action string, delay int) error {
 		when = fmt.Sprintf("+%d", delay/60)
 	}
 	return exec.Command("shutdown", arg, when).Start()
+}
+
+// chassisTypes reads the SMBIOS chassis type.
+func chassisTypes() []int {
+	if n, err := strconv.Atoi(readTrim(filepath.Join(sysRoot, "class/dmi/id/chassis_type"))); err == nil {
+		return []int{n}
+	}
+	return nil
 }

@@ -98,3 +98,11 @@ func powerAction(action string, delay int) error {
 	}
 	return exec.Command("shutdown", arg, when).Start()
 }
+
+// chassisTypes: Macs with a battery are laptops (that is handled by the caller), the rest desktops.
+func chassisTypes() []int {
+	if hasBattery() {
+		return []int{9}
+	}
+	return []int{3}
+}

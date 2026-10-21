@@ -39,6 +39,7 @@ type powerMonitor struct {
 
 	ups      upsProbe
 	nvidia   cmdProbe
+	virtual  bool // a VM guest: its power is part of the host's, so it isn't estimated
 	plugFail int
 	client   *http.Client
 }
@@ -67,6 +68,12 @@ func (p *powerMonitor) setConfig(c proto.EnergyConfig) {
 	p.plugFail = 0
 	p.mu.Unlock()
 	p.ups.reset()
+}
+
+func (p *powerMonitor) setVirtual(v bool) {
+	p.mu.Lock()
+	p.virtual = v
+	p.mu.Unlock()
 }
 
 func (p *powerMonitor) config() proto.EnergyConfig {
@@ -139,6 +146,14 @@ func (p *powerMonitor) collect(cpuPct float64) *proto.Energy {
 		}
 		e.Watts, e.Source, e.Kind = sum, parts[0].Source, "partial"
 		return finish(e)
+	}
+	p.mu.Lock()
+	virtual := p.virtual
+	p.mu.Unlock()
+	if virtual && cfg.Mode == "auto" {
+		// A virtual machine's draw is part of its host's (vSphere hosts report theirs), so an
+		// estimate would count the same watts twice. "Estimate" mode still forces one.
+		return nil
 	}
 	e.Watts, e.Source, e.Kind = p.estimate(cfg, cpuPct), "estimate", "estimate"
 	return finish(e)

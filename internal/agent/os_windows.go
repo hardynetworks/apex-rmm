@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -175,4 +176,26 @@ func powerAction(action string, delay int) error {
 	cmd := exec.Command("shutdown.exe", arg, "/f", "/t", fmt.Sprint(delay), "/c", "Apex RMM: "+action+" requested by administrator")
 	hideWindow(cmd)
 	return cmd.Start()
+}
+
+var (
+	chassisOnce sync.Once
+	chassisList []int
+)
+
+// chassisTypes reads Win32_SystemEnclosure.ChassisTypes (SMBIOS chassis types).
+func chassisTypes() []int {
+	chassisOnce.Do(func() {
+		s, err := runCmd(20*time.Second, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+			"(Get-CimInstance Win32_SystemEnclosure).ChassisTypes -join ','")
+		if err != nil {
+			return
+		}
+		for _, f := range strings.Split(strings.TrimSpace(s), ",") {
+			if n, err := strconv.Atoi(strings.TrimSpace(f)); err == nil {
+				chassisList = append(chassisList, n)
+			}
+		}
+	})
+	return chassisList
 }

@@ -105,7 +105,7 @@ func (a *Agent) session(ctx context.Context) error {
 		_ = ws.Close()
 	}()
 
-	a.send(proto.TypeHello, "", proto.Hello{Inventory: CollectInventory()})
+	a.sendHello()
 	go a.metricsLoop(sctx)
 
 	ws.SetReadLimit(32 << 20)
@@ -171,10 +171,18 @@ func (a *Agent) reply(id string, v any, err error) {
 	}
 }
 
+// sendHello sends the inventory; it also tells the power monitor whether this is a VM.
+func (a *Agent) sendHello() {
+	inv := CollectInventory()
+	a.pm.setVirtual(inv.Chassis == "virtual")
+	a.send(proto.TypeHello, "", proto.Hello{Inventory: inv})
+}
+
 // metrics is one metrics sample, with the power reading.
 func (a *Agent) metrics() proto.Metrics {
 	m := a.mc.collect()
 	m.Energy = a.pm.collect(m.CPU)
+	m.GPUs = gpuMonitorInstance().collect()
 	return m
 }
 
@@ -195,7 +203,7 @@ func (a *Agent) metricsLoop(ctx context.Context) {
 			time.Sleep(2 * time.Second) // let a new power source answer first
 			a.send(proto.TypeMetrics, "", a.metrics())
 		case <-inv.C:
-			a.send(proto.TypeHello, "", proto.Hello{Inventory: CollectInventory()})
+			a.sendHello()
 		}
 	}
 }
@@ -382,6 +390,7 @@ func listProcesses() []proto.Process {
 	if err != nil {
 		return nil
 	}
+	gpu := gpuMonitorInstance().procUsage()
 	out := make([]proto.Process, 0, len(procs))
 	for _, p := range procs {
 		name, _ := p.Name()
@@ -395,7 +404,8 @@ func listProcesses() []proto.Process {
 		if len(cmd) > 400 {
 			cmd = cmd[:400]
 		}
-		out = append(out, proto.Process{PID: p.Pid, Name: name, User: user, CPU: round1(cpu), MemRSS: rss, Cmdline: cmd})
+		g := gpu[p.Pid]
+		out = append(out, proto.Process{PID: p.Pid, Name: name, User: user, CPU: round1(cpu), MemRSS: rss, Cmdline: cmd, GPU: round1(g.Pct), GPUMem: g.Mem})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].MemRSS > out[j].MemRSS })
 	return out

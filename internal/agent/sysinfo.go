@@ -141,6 +141,8 @@ func CollectInventory() proto.Inventory {
 	if runtime.GOOS == "windows" && inv.Platform != "" {
 		inv.Platform = strings.TrimSpace(inv.Platform)
 	}
+	inv.Chassis = detectChassis(&inv, chassisTypes(), hasBattery())
+	inv.GPUs = gpuMonitorInstance().names()
 	return inv
 }
 
@@ -198,4 +200,47 @@ func (mc *metricsCollector) collect() proto.Metrics {
 	}
 	m.Users = loggedInUsers()
 	return m
+}
+
+// smbiosChassis maps an SMBIOS chassis type to server, desktop or laptop ("" when it says nothing).
+func smbiosChassis(t int) string {
+	switch t {
+	case 3, 4, 5, 6, 7, 13, 15, 16, 24, 34, 35, 36:
+		return "desktop"
+	case 8, 9, 10, 11, 14, 30, 31, 32:
+		return "laptop"
+	case 17, 23, 25, 28, 29:
+		return "server"
+	}
+	return ""
+}
+
+var virtualHints = []string{"vmware", "qemu", "kvm", "virtualbox", "innotek", "xen", "parallels", "bochs", "virtual machine", "hvm domu", "google compute engine", "amazon ec2", "openstack", "proxmox"}
+
+// detectChassis classifies the device for grouping: virtual (a VM guest), laptop, desktop or server.
+func detectChassis(inv *proto.Inventory, smbios []int, battery bool) string {
+	hw := strings.ToLower(inv.Manufacturer + " " + inv.Model)
+	if inv.Virtual != "" {
+		return "virtual"
+	}
+	for _, h := range virtualHints {
+		if strings.Contains(hw, h) {
+			return "virtual"
+		}
+	}
+	kind := ""
+	for _, t := range smbios {
+		if k := smbiosChassis(t); k != "" {
+			kind = k
+			break
+		}
+	}
+	if kind == "" && battery {
+		kind = "laptop"
+	}
+	// Server operating systems on tower or desktop hardware are still servers.
+	if kind != "laptop" && strings.Contains(strings.ToLower(inv.Platform), "server") {
+		kind = "server"
+	}
+	return kind
 }
