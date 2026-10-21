@@ -51,7 +51,9 @@ func TestLinuxSysfs(t *testing.T) {
 		"class/powercap/intel-rapl:0:2/energy_uj": "6100000",  // 6 J = 3 W
 	})
 	parts := p.parts()
-	if len(parts) != 3 || parts[0].Name != "CPU package" || !near(parts[0].Watts, 20) || parts[1].Name != "RAM" || !near(parts[1].Watts, 3) ||
+	// rates use the real clock, so allow for the time the test itself takes
+	within := func(got, want float64) bool { return got > want*0.9 && got <= want*1.001 }
+	if len(parts) != 3 || parts[0].Name != "CPU package" || !within(parts[0].Watts, 20) || parts[1].Name != "RAM" || !within(parts[1].Watts, 3) ||
 		parts[2].Name != "AMD GPU" || !near(parts[2].Watts, 35) {
 		t.Fatalf("%+v", parts)
 	}
