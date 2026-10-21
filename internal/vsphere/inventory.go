@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -57,8 +58,10 @@ type Host struct {
 	VMsOn           int        `json:"vms_on"`
 	Sensors         []Sensor   `json:"sensors,omitempty"` // only those not green
 	Readings        []Reading  `json:"readings,omitempty"`
-	PowerWatts      *float64   `json:"power_watts,omitempty"`     // current draw reported by the host (performance counter)
+	PowerWatts      *float64   `json:"power_watts,omitempty"`     // current draw reported by the host
 	PowerCapWatts   *float64   `json:"power_cap_watts,omitempty"` // configured power cap, if any
+	PowerSource     string     `json:"power_source,omitempty"`    // counter (power.power.average) or sensor (IPMI power sensors)
+	PowerNote       string     `json:"power_note,omitempty"`      // why there is no power reading
 }
 
 // MaxTempC is the hottest temperature sensor, and whether there is one.
@@ -552,9 +555,10 @@ func sensorKind(sensorType, baseUnits string) (kind, unit string) {
 	return "other", baseUnits
 }
 
-// addHostPower fills in each host's current power draw (and cap) from the
-// real-time performance counters. Hosts or vCenters that do not expose them are
-// left alone: this is best effort and never fails a collection.
+// addHostPower fills in each host's current power draw (and cap). The first choice is the
+// real-time "power.power.average" performance counter; hosts that report 0 or nothing there
+// (power management not exposed by the BIOS/BMC) fall back to the IPMI power sensors in the
+// host's hardware health. This is best effort and never fails a collection.
 func (c *Conn) addHostPower(ctx context.Context, hosts []Host) {
 	if len(hosts) == 0 {
 		return
@@ -568,42 +572,128 @@ func (c *Conn) addHostPower(ctx context.Context, hosts []Host) {
 		refs = append(refs, types.ManagedObjectReference{Type: "HostSystem", Value: h.Ref})
 		byRef[h.Ref] = i
 	}
-	if len(refs) == 0 {
-		return
-	}
-	pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	pm := performance.NewManager(c.c.Client)
-	spec := types.PerfQuerySpec{MaxSample: 1, IntervalId: 20}
-	samples, err := pm.SampleByName(pctx, spec, []string{"power.power.average", "power.powerCap.average"}, refs)
-	if err != nil {
-		return
-	}
-	series, err := pm.ToMetricSeries(pctx, samples)
-	if err != nil {
-		return
-	}
-	for _, em := range series {
-		i, ok := byRef[em.Entity.Value]
-		if !ok {
-			continue
-		}
-		for _, v := range em.Value {
-			if len(v.Value) == 0 {
+	note := ""
+	if len(refs) > 0 {
+		pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		pm := performance.NewManager(c.c.Client)
+		// One counter per query: a vCenter without the cap counter must not lose the draw.
+		for _, name := range []string{"power.power.average", "power.powerCap.average"} {
+			vals, err := c.hostCounter(pctx, pm, name, refs)
+			if err != nil {
+				if name == "power.power.average" {
+					note = "vSphere returned no power counter: " + err.Error()
+				}
 				continue
 			}
-			w := float64(v.Value[len(v.Value)-1])
-			if w < 0 {
-				continue
-			}
-			switch v.Name {
-			case "power.power.average":
-				hosts[i].PowerWatts = &w
-			case "power.powerCap.average":
-				if w > 0 {
+			for ref, w := range vals {
+				i, ok := byRef[ref]
+				if !ok || w <= 0 { // 0 W: the host doesn't measure its power
+					continue
+				}
+				w := w
+				if name == "power.power.average" {
+					hosts[i].PowerWatts, hosts[i].PowerSource = &w, "counter"
+				} else {
 					hosts[i].PowerCapWatts = &w
 				}
 			}
 		}
 	}
+	for i := range hosts {
+		if hosts[i].PowerWatts != nil {
+			continue
+		}
+		if w, ok := sensorPower(hosts[i].Readings); ok {
+			hosts[i].PowerWatts, hosts[i].PowerSource = &w, "sensor"
+			continue
+		}
+		switch {
+		case hosts[i].ConnectionState != "connected":
+			hosts[i].PowerNote = "the host is not connected"
+		case note != "":
+			hosts[i].PowerNote = note
+		default:
+			hosts[i].PowerNote = "the host reports no power draw: its power counter is 0 and it has no power sensors. " +
+				"Enable power management (OS controlled / \"Active Power Controller\") in the server's BIOS and make sure the vendor's ESXi image or BMC reports power"
+		}
+		// Without a measurement, estimate from CPU load so the host still counts towards the
+		// fleet's power (marked as an estimate, with the note saying why).
+		if w, ok := estimateHostPower(hosts[i]); ok {
+			hosts[i].PowerWatts, hosts[i].PowerSource = &w, "estimate"
+		}
+	}
+}
+
+// estimateHostPower: idle + (full load − idle) × CPU use, from the core count. The same rough
+// figures as the agent's estimate, with a little more at idle for server boards (BMC, fans, disks).
+func estimateHostPower(h Host) (float64, bool) {
+	if h.ConnectionState != "connected" || h.PowerState == "poweredOff" || h.CPUCores <= 0 {
+		return 0, false
+	}
+	cores := float64(h.CPUCores)
+	idle := 45 + 2*cores
+	full := idle + math.Min(7*cores, 280)
+	w := idle + (full-idle)*math.Max(0, math.Min(100, h.CPUPct()))/100
+	return math.Round(w), true
+}
+
+// hostCounter reads the latest real-time sample of one counter for each host.
+func (c *Conn) hostCounter(ctx context.Context, pm *performance.Manager, name string, refs []types.ManagedObjectReference) (map[string]float64, error) {
+	// Instance "" is the host-wide aggregate; MaxSample 3 skips a -1 "not collected yet" sample.
+	spec := types.PerfQuerySpec{MaxSample: 3, IntervalId: 20, MetricId: []types.PerfMetricId{{Instance: ""}}}
+	samples, err := pm.SampleByName(ctx, spec, []string{name}, refs)
+	if err != nil {
+		return nil, cleanErr(err)
+	}
+	series, err := pm.ToMetricSeries(ctx, samples)
+	if err != nil {
+		return nil, cleanErr(err)
+	}
+	out := map[string]float64{}
+	for _, em := range series {
+		for _, v := range em.Value {
+			if v.Name != name || v.Instance != "" {
+				continue
+			}
+			for j := len(v.Value) - 1; j >= 0; j-- {
+				if v.Value[j] >= 0 {
+					out[em.Entity.Value] = float64(v.Value[j])
+					break
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+var (
+	reSysPower = regexp.MustCompile(`(?i)(consumption|system level|sys(tem)? power|total power|power meter|input power|board pwr|pwr meter|^pwr$|^power$)`)
+	rePSUIn    = regexp.MustCompile(`(?i)(ps|psu|power supply)\s*\d.*(input|in\b|pin)`)
+)
+
+// sensorPower works out the whole-host draw from the IPMI power sensors: a system-level reading
+// (Dell "System Board Pwr Consumption", HPE "Power Meter", Supermicro "Total Power"...), else the
+// power supplies' input power added up.
+func sensorPower(rs []Reading) (float64, bool) {
+	psu, nPSU := 0.0, 0
+	for _, r := range rs {
+		if r.Kind != "power" || !strings.EqualFold(r.Unit, "W") || r.Value <= 0 {
+			continue
+		}
+		if rePSUIn.MatchString(r.Name) {
+			psu += r.Value
+			nPSU++
+			continue
+		}
+	}
+	for _, r := range rs {
+		if r.Kind == "power" && strings.EqualFold(r.Unit, "W") && r.Value > 0 && !rePSUIn.MatchString(r.Name) && reSysPower.MatchString(r.Name) {
+			return r.Value, true
+		}
+	}
+	if nPSU > 0 {
+		return psu, true
+	}
+	return 0, false
 }

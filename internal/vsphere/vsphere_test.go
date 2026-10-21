@@ -83,6 +83,13 @@ func TestProbeAndCollect(t *testing.T) {
 	if d := inv.Datastores[0]; d.Capacity <= 0 || d.UsedPct() < 0 || d.UsedPct() > 100 {
 		t.Fatalf("datastore looks wrong: %+v", d)
 	}
+	for _, h := range inv.Hosts {
+		t.Logf("host %s power=%v src=%q note=%q", h.Name, h.PowerWatts, h.PowerSource, h.PowerNote)
+		// the simulator has no power data: hosts get an estimate, with the reason
+		if h.PowerWatts == nil || h.PowerSource != "estimate" || h.PowerNote == "" {
+			t.Fatalf("host %s: want an estimate with a note, got %v %q %q", h.Name, h.PowerWatts, h.PowerSource, h.PowerNote)
+		}
+	}
 }
 
 func TestPowerActions(t *testing.T) {
@@ -383,5 +390,25 @@ func TestHostReadings(t *testing.T) {
 		if k, _ := sensorKind(c.typ, c.unit); k != c.kind {
 			t.Errorf("sensorKind(%q,%q)=%q want %q", c.typ, c.unit, k, c.kind)
 		}
+	}
+}
+
+func TestSensorPower(t *testing.T) {
+	w := func(name string, v float64) Reading { return Reading{Name: name, Kind: "power", Value: v, Unit: "W"} }
+	if v, ok := sensorPower([]Reading{w("PS1 Input Power", 210), w("PS2 Input Power", 190), w("System Board 1 Pwr Consumption", 385)}); !ok || v != 385 {
+		t.Fatal(v, ok)
+	}
+	if v, ok := sensorPower([]Reading{w("PS1 Input Power", 210), w("PS2 Input Power", 190)}); !ok || v != 400 {
+		t.Fatal(v, ok)
+	}
+	// Supermicro: "Power Distribution 0 PW Consumption" next to discrete PSU status sensors
+	if v, ok := sensorPower([]Reading{w("Power Distribution 0 PW Consumption", 415), {Name: "Power Supply 1 PS1 Status", Kind: "power", Value: 1, Unit: "sensor-discrete"}}); !ok || v != 415 {
+		t.Fatal(v, ok)
+	}
+	if v, ok := sensorPower([]Reading{w("Power Meter", 155)}); !ok || v != 155 {
+		t.Fatal(v, ok)
+	}
+	if _, ok := sensorPower([]Reading{{Name: "CPU1 Temp", Kind: "temperature", Value: 40, Unit: "C"}, w("PS1 Output Power", 0)}); ok {
+		t.Fatal("power from nothing")
 	}
 }
