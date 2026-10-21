@@ -38,7 +38,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		count(*) FILTER (WHERE resolved_at > now() - interval '7 days') AS resolved_week FROM tickets`, userFrom(r).ID)
 	out["jobs"], _ = s.db.Map(ctx, `SELECT count(*) FILTER (WHERE status='success') AS success, count(*) FILTER (WHERE status IN ('failed','timeout','error')) AS failed,
 		count(*) FILTER (WHERE status IN ('pending','running')) AS active FROM job_results WHERE created_at > now() - interval '24 hours'`)
-	out["recent_alerts"], _ = s.db.Maps(ctx, `SELECT a.id, a.title, a.severity, a.status, a.created_at, a.device_id, coalesce(nullif(d.display_name,''), d.hostname) AS device_name
+	out["recent_alerts"], _ = s.db.Maps(ctx, `SELECT a.id, a.title, a.severity, a.status, a.created_at, a.device_id, a.source_key, coalesce(nullif(d.display_name,''), nullif(d.hostname,''), nullif(a.source_name,'')) AS device_name
 		FROM alerts a LEFT JOIN devices d ON d.id=a.device_id WHERE a.status<>'resolved' ORDER BY a.created_at DESC LIMIT 8`)
 	out["recent_tickets"], _ = s.db.Maps(ctx, `SELECT t.id, t.number, t.title, t.status, t.priority, t.updated_at, c.name AS client_name
 		FROM tickets t LEFT JOIN clients c ON c.id=t.client_id WHERE t.status NOT IN ('resolved','closed') ORDER BY

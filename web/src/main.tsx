@@ -17,6 +17,7 @@ import { Scripts, JobPage } from './pages/Scripts';
 import { Alerts } from './pages/Alerts';
 import { Tickets, TicketPage } from './pages/Tickets';
 import { Clients } from './pages/Clients';
+import { Virtualization } from './pages/Virtualization';
 import { Settings } from './pages/Settings';
 import { UserContext } from './user';
 import { native } from './native';
@@ -24,6 +25,7 @@ import { native } from './native';
 const nav = [
   { href: '/', label: 'Dashboard', icon: 'dashboard' },
   { href: '/devices', label: 'Devices', icon: 'devices' },
+  { href: '/virtualization', label: 'Virtualization', icon: 'server' },
   { href: '/alerts', label: 'Alerts', icon: 'bell', badge: 'alerts' },
   { href: '/tickets', label: 'Tickets', icon: 'ticket', badge: 'tickets' },
   { href: '/scripts', label: 'Automation', icon: 'code' },
@@ -149,6 +151,7 @@ function Routes({ path }: { path: string }) {
   if ((m = match('/devices/:id/terminal', path))) return <TerminalPage id={m.id} />;
   if (path === '/scripts') return <Scripts />;
   if ((m = match('/jobs/:id', path))) return <JobPage id={m.id} />;
+  if (path === '/virtualization') return <Virtualization />;
   if (path === '/alerts') return <Alerts />;
   if (path === '/tickets') return <Tickets />;
   if ((m = match('/tickets/:id', path))) return <TicketPage id={m.id} />;

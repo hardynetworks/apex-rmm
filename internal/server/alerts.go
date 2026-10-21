@@ -107,7 +107,7 @@ func (s *Server) listAlerts(w http.ResponseWriter, r *http.Request) {
 	case "acknowledged":
 		where = "a.status='acknowledged'"
 	}
-	rows, err := s.db.Maps(r.Context(), `SELECT a.*, coalesce(nullif(d.display_name,''), d.hostname) AS device_name, d.os, c.name AS client_name, t.number AS ticket_number
+	rows, err := s.db.Maps(r.Context(), `SELECT a.*, coalesce(nullif(d.display_name,''), nullif(d.hostname,''), nullif(a.source_name,'')) AS device_name, d.os, c.name AS client_name, t.number AS ticket_number
 		FROM alerts a LEFT JOIN devices d ON d.id=a.device_id LEFT JOIN clients c ON c.id=d.client_id LEFT JOIN tickets t ON t.id=a.ticket_id
 		WHERE `+where+` ORDER BY CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, a.created_at DESC LIMIT 500`)
 	if err != nil {
