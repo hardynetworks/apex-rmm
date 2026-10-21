@@ -55,6 +55,7 @@ const paths: Record<string, string> = {
   history: 'M3 12a9 9 0 1 0 3-6.7M3 4v4h4M12 7v5l3 2',
   server: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
   laptop: 'M5 5h14v10H5zM2 19h20',
+  gpu: 'M2 7h20v10H2zM5 17v3M9 17v3M2 7V4M9.5 12a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M17 10h2M17 14h2',
   folder: 'M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
   file: 'M6 3h8l5 5v13H6zM14 3v5h5',
   upload: 'M12 16V5M7 10l5-5 5 5M4 20h16',

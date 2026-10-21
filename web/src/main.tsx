@@ -21,6 +21,7 @@ import { Virtualization } from './pages/Virtualization';
 import { Settings } from './pages/Settings';
 import { UserContext } from './user';
 import { native } from './native';
+import { closeAllDeviceTabs, closeDeviceTab, deviceTabHref, moveDeviceTab, useDeviceTabs } from './devtabs';
 
 const nav = [
   { href: '/', label: 'Dashboard', icon: 'dashboard' },
@@ -150,7 +151,7 @@ function TopBar({ title, user, initials, alerts, theme, onTheme, onMenu, onLogou
   return (
     <header class="topbar">
       <button class="icon-btn topbar-menu" onClick={onMenu} aria-label="Menu"><Icon name="menu" /></button>
-      <h2 class="topbar-title">{title}</h2>
+      <DeviceTabs title={title} />
       <div class="topbar-actions">
         <Link href="/alerts" class="icon-btn topbar-bell" title={alerts ? `${alerts} open alerts` : 'Alerts'} aria-label="Alerts">
           <Icon name="bell" size={19} />
@@ -176,6 +177,57 @@ function TopBar({ title, user, initials, alerts, theme, onTheme, onMenu, onLogou
   );
 }
 
+/** Browser-style tabs for the devices you have open; the page title when there are none. */
+function DeviceTabs({ title }: { title: string }) {
+  const tabs = useDeviceTabs();
+  const { path } = useLocation();
+  const activeId = match('/devices/:id', path)?.id || match('/devices/:id/terminal', path)?.id || '';
+  const [online, setOnline] = useState<Record<string, boolean | null>>({});
+  const [drag, setDrag] = useState<string | null>(null);
+  const ids = tabs.map((t) => t.id).join(',');
+  useEffect(() => {
+    if (!ids) return;
+    const load = () => api.get<any[]>('/devices?ids=' + encodeURIComponent(ids)).then((rows) => {
+      const m: Record<string, boolean | null> = {};
+      for (const id of ids.split(',')) m[id] = null; // null: removed
+      for (const r of rows) m[r.id] = !!r.online;
+      setOnline(m);
+    }).catch(() => {});
+    load();
+    const t = setInterval(() => document.visibilityState === 'visible' && load(), 30000);
+    return () => clearInterval(t);
+  }, [ids]);
+  // keep the active tab in view
+  useEffect(() => {
+    document.querySelector('.dev-tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [activeId, tabs.length]);
+  if (!tabs.length) return <h2 class="topbar-title">{title}</h2>;
+  const close = (id: string) => {
+    const next = closeDeviceTab(id);
+    if (id === activeId) navigate(next ? deviceTabHref(next) : '/devices');
+  };
+  return (
+    <nav class="dev-tabs" aria-label="Open devices">
+      {tabs.map((t, i) => {
+        const on = online[t.id];
+        return (
+          <div key={t.id} class={'dev-tab' + (t.id === activeId ? ' active' : '') + (on === null ? ' gone' : '') + (drag === t.id ? ' dragging' : '')}
+            draggable onDragStart={(e) => { setDrag(t.id); e.dataTransfer?.setData('text/plain', t.id); }} onDragEnd={() => setDrag(null)}
+            onDragOver={(e) => drag && e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (drag) moveDeviceTab(drag, i); setDrag(null); }}
+            onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); close(t.id); } }}>
+            <Link href={deviceTabHref(t)} title={t.name + (on === false ? ' (offline)' : on === null ? ' (removed)' : '')}>
+              <span class={'dev-tab-dot ' + (on ? 'on' : on === false ? 'off' : 'unknown')} />
+              <span class="dev-tab-name">{t.name}</span>
+            </Link>
+            <button class="dev-tab-x" aria-label={'Close ' + t.name} title="Close tab" onClick={() => close(t.id)}><Icon name="x" size={13} /></button>
+          </div>
+        );
+      })}
+      {tabs.length > 1 && <button class="dev-tabs-clear" title="Close all device tabs" onClick={() => { closeAllDeviceTabs(); if (activeId) navigate('/devices'); }}>Close all</button>}
+    </nav>
+  );
+}
+
 class Boundary extends Component<{ path: string; children?: ComponentChildren }, { err: string | null }> {
   state = { err: null as string | null };
   componentDidCatch(e: any) { this.setState({ err: String(e?.message || e) }); }
@@ -190,7 +242,7 @@ function Routes({ path }: { path: string }) {
   let m: Record<string, string> | null;
   if (path === '/') return <Dashboard />;
   if (path === '/devices') return <Devices />;
-  if ((m = match('/devices/:id', path))) return <DevicePage id={m.id} />;
+  if ((m = match('/devices/:id', path))) return <DevicePage key={m.id} id={m.id} />;
   if ((m = match('/devices/:id/terminal', path))) return <TerminalPage id={m.id} />;
   if (path === '/scripts') return <Scripts />;
   if ((m = match('/jobs/:id', path))) return <JobPage id={m.id} />;

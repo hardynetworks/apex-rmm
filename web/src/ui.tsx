@@ -347,3 +347,14 @@ export function Kv({ items }: { items: [string, ComponentChildren][] }) {
     </dl>
   );
 }
+
+/** Device groups: the type set by hand, else the one the agent detected. */
+export const DEVICE_TYPES: [string, string, string][] = [
+  ['server', 'Servers', 'server'],
+  ['desktop', 'Desktops', 'devices'],
+  ['laptop', 'Laptops', 'laptop'],
+  ['virtual', 'Virtual machines', 'box'],
+  ['other', 'Other', 'more'],
+];
+export const TYPE_LABEL: Record<string, string> = { server: 'Server', desktop: 'Desktop', laptop: 'Laptop', virtual: 'Virtual machine', other: 'Other' };
+export const typeIcon = (t: string) => DEVICE_TYPES.find((x) => x[0] === t)?.[2] || 'more';
