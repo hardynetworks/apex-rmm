@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
+	"github.com/vmware/govmomi/vim25/types"
 	"net/url"
 	"strings"
 	"testing"
@@ -295,5 +296,52 @@ func TestSnapshotAndTail(t *testing.T) {
 	}
 	if got := tail("short", 100); got != "short" {
 		t.Fatalf("tail = %q", got)
+	}
+}
+
+func TestHostReadings(t *testing.T) {
+	desc := func(k string) types.BaseElementDescription {
+		return &types.ElementDescription{Key: k}
+	}
+	rt := types.HostRuntimeInfo{HealthSystemRuntime: &types.HealthSystemRuntime{SystemHealthInfo: &types.HostSystemHealthInfo{
+		NumericSensorInfo: []types.HostNumericSensorInfo{
+			{Name: "CPU1 Temp", SensorType: "temperature", BaseUnits: "Degrees C", UnitModifier: -2, CurrentReading: 5550, HealthState: desc("Green")},
+			{Name: "Inlet Temp", SensorType: "temperature", BaseUnits: "Degrees C", UnitModifier: 0, CurrentReading: 71, HealthState: desc("Yellow")},
+			{Name: "Fan 1", SensorType: "fan", BaseUnits: "RPM", UnitModifier: 0, CurrentReading: 4200, HealthState: desc("Green")},
+			{Name: "Fan 2", SensorType: "fan", BaseUnits: "RPM", UnitModifier: 0, CurrentReading: 3900, HealthState: desc("Green")},
+			{Name: "PSU 1 Output", SensorType: "power", BaseUnits: "Watts", UnitModifier: 0, CurrentReading: 310, HealthState: desc("Green")},
+			{Name: "12V", SensorType: "voltage", BaseUnits: "Volts", UnitModifier: -3, CurrentReading: 12100, HealthState: desc("Green")},
+		}}}}
+	r := hostReadings(rt)
+	if len(r) != 6 {
+		t.Fatalf("want 6 readings, got %d: %+v", len(r), r)
+	}
+	h := Host{Readings: r}
+	if v, ok := h.MaxTempC(); !ok || v != 71 {
+		t.Errorf("max temp = %v %v, want 71", v, ok)
+	}
+	if n, min := h.FanSummary(); n != 2 || min != 3900 {
+		t.Errorf("fans = %d min %v, want 2 / 3900", n, min)
+	}
+	for _, x := range r {
+		if x.Name == "CPU1 Temp" && (x.Value != 55.5 || x.Unit != "C") {
+			t.Errorf("unit modifier not applied: %+v", x)
+		}
+		if x.Name == "12V" && (x.Value != 12.1 || x.Kind != "voltage") {
+			t.Errorf("voltage wrong: %+v", x)
+		}
+	}
+	if _, ok := (Host{}).MaxTempC(); ok {
+		t.Error("no sensors must report no temperature")
+	}
+	if hostReadings(types.HostRuntimeInfo{}) != nil {
+		t.Error("no health info must give no readings")
+	}
+	for _, c := range []struct{ typ, unit, kind string }{
+		{"", "Degrees F", "temperature"}, {"fan", "", "fan"}, {"other", "Watts", "power"}, {"", "furlongs", "other"},
+	} {
+		if k, _ := sensorKind(c.typ, c.unit); k != c.kind {
+			t.Errorf("sensorKind(%q,%q)=%q want %q", c.typ, c.unit, k, c.kind)
+		}
 	}
 }

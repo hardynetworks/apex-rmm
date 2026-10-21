@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vmware/govmomi/performance"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -20,6 +21,15 @@ type Sensor struct {
 	Type    string `json:"type"`
 	State   string `json:"state"` // green | yellow | red | unknown
 	Reading string `json:"reading,omitempty"`
+}
+
+// Reading is a numeric hardware sensor value (temperature, fan speed, PSU, voltage ...).
+type Reading struct {
+	Name  string  `json:"name"`
+	Kind  string  `json:"kind"` // temperature | fan | power | voltage | current | other
+	Value float64 `json:"value"`
+	Unit  string  `json:"unit"`  // C | RPM | W | V | A | ...
+	State string  `json:"state"` // green | yellow | red | unknown
 }
 
 type Host struct {
@@ -46,6 +56,33 @@ type Host struct {
 	VMs             int        `json:"vms"`
 	VMsOn           int        `json:"vms_on"`
 	Sensors         []Sensor   `json:"sensors,omitempty"` // only those not green
+	Readings        []Reading  `json:"readings,omitempty"`
+	PowerWatts      *float64   `json:"power_watts,omitempty"`     // current draw reported by the host (performance counter)
+	PowerCapWatts   *float64   `json:"power_cap_watts,omitempty"` // configured power cap, if any
+}
+
+// MaxTempC is the hottest temperature sensor, and whether there is one.
+func (h Host) MaxTempC() (float64, bool) {
+	best, ok := 0.0, false
+	for _, r := range h.Readings {
+		if r.Kind == "temperature" && (!ok || r.Value > best) {
+			best, ok = r.Value, true
+		}
+	}
+	return best, ok
+}
+
+// FanSummary returns the number of fans with a reading and the slowest speed.
+func (h Host) FanSummary() (count int, minRPM float64) {
+	for _, r := range h.Readings {
+		if r.Kind == "fan" {
+			if count == 0 || r.Value < minRPM {
+				minRPM = r.Value
+			}
+			count++
+		}
+	}
+	return
 }
 
 // CPUPct / MemPct are derived utilisation percentages (0-100).
@@ -242,9 +279,12 @@ func (c *Conn) Collect(ctx context.Context) (*Inventory, error) {
 			out.Version, out.Build = p.Version, p.Build
 		}
 		out.Sensors = hostSensors(h.Runtime)
+		out.Readings = hostReadings(h.Runtime)
 		inv.Hosts = append(inv.Hosts, out)
 		inv.Alarms = append(inv.Alarms, alarmsOf("host", h.Self.Value, h.Name, h.TriggeredAlarmState)...)
 	}
+
+	c.addHostPower(ctx, inv.Hosts)
 
 	for _, vm := range vms {
 		out := VM{Ref: vm.Self.Value, Name: vm.Name, Status: str(vm.Summary.OverallStatus), PowerState: string(vm.Runtime.PowerState), BootTime: vm.Runtime.BootTime}
@@ -446,4 +486,124 @@ func hostSensors(rt types.HostRuntimeInfo) []Sensor {
 		}
 	}
 	return out
+}
+
+// hostReadings returns every numeric sensor the host exposes, scaled to real units.
+func hostReadings(rt types.HostRuntimeInfo) []Reading {
+	hs := rt.HealthSystemRuntime
+	if hs == nil || hs.SystemHealthInfo == nil {
+		return nil
+	}
+	var out []Reading
+	for _, n := range hs.SystemHealthInfo.NumericSensorInfo {
+		if n.CurrentReading == 0 && n.SensorType == "" {
+			continue
+		}
+		val := float64(n.CurrentReading) * math.Pow(10, float64(n.UnitModifier))
+		kind, unit := sensorKind(n.SensorType, n.BaseUnits)
+		if kind == "other" && n.BaseUnits == "" {
+			continue
+		}
+		st := "unknown"
+		if n.HealthState != nil {
+			st = strings.ToLower(n.HealthState.GetElementDescription().Key)
+		}
+		out = append(out, Reading{Name: n.Name, Kind: kind, Value: math.Round(val*10) / 10, Unit: unit, State: st})
+		if len(out) >= 120 {
+			break
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// sensorKind maps vSphere's sensor type and base units to a kind and a short unit.
+func sensorKind(sensorType, baseUnits string) (kind, unit string) {
+	u := strings.ToLower(baseUnits)
+	switch {
+	case strings.Contains(u, "degrees c"), u == "c", u == "celsius":
+		return "temperature", "C"
+	case strings.Contains(u, "degrees f"):
+		return "temperature", "F"
+	case u == "rpm":
+		return "fan", "RPM"
+	case u == "watts" || u == "w":
+		return "power", "W"
+	case u == "volts" || u == "v":
+		return "voltage", "V"
+	case u == "amps" || u == "a":
+		return "current", "A"
+	}
+	switch strings.ToLower(sensorType) {
+	case "temperature":
+		return "temperature", baseUnits
+	case "fan":
+		return "fan", baseUnits
+	case "power":
+		return "power", baseUnits
+	case "voltage":
+		return "voltage", baseUnits
+	}
+	return "other", baseUnits
+}
+
+// addHostPower fills in each host's current power draw (and cap) from the
+// real-time performance counters. Hosts or vCenters that do not expose them are
+// left alone: this is best effort and never fails a collection.
+func (c *Conn) addHostPower(ctx context.Context, hosts []Host) {
+	if len(hosts) == 0 {
+		return
+	}
+	refs := make([]types.ManagedObjectReference, 0, len(hosts))
+	byRef := map[string]int{}
+	for i, h := range hosts {
+		if h.ConnectionState != "connected" {
+			continue
+		}
+		refs = append(refs, types.ManagedObjectReference{Type: "HostSystem", Value: h.Ref})
+		byRef[h.Ref] = i
+	}
+	if len(refs) == 0 {
+		return
+	}
+	pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pm := performance.NewManager(c.c.Client)
+	spec := types.PerfQuerySpec{MaxSample: 1, IntervalId: 20}
+	samples, err := pm.SampleByName(pctx, spec, []string{"power.power.average", "power.powerCap.average"}, refs)
+	if err != nil {
+		return
+	}
+	series, err := pm.ToMetricSeries(pctx, samples)
+	if err != nil {
+		return
+	}
+	for _, em := range series {
+		i, ok := byRef[em.Entity.Value]
+		if !ok {
+			continue
+		}
+		for _, v := range em.Value {
+			if len(v.Value) == 0 {
+				continue
+			}
+			w := float64(v.Value[len(v.Value)-1])
+			if w < 0 {
+				continue
+			}
+			switch v.Name {
+			case "power.power.average":
+				hosts[i].PowerWatts = &w
+			case "power.powerCap.average":
+				if w > 0 {
+					hosts[i].PowerCapWatts = &w
+				}
+			}
+		}
+	}
 }

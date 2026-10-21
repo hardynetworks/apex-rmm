@@ -311,3 +311,14 @@ CREATE TABLE IF NOT EXISTS vsphere_deploys (
 );
 CREATE INDEX IF NOT EXISTS vsphere_deploys_conn ON vsphere_deploys (connection_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS vsphere_deploys_batch ON vsphere_deploys (batch_id);
+
+-- Host power/temperature history from vSphere (kept 30 days).
+CREATE TABLE IF NOT EXISTS vsphere_host_power (
+    connection_id text NOT NULL REFERENCES vsphere_connections(id) ON DELETE CASCADE,
+    host_ref      text NOT NULL,
+    ts            timestamptz NOT NULL DEFAULT now(),
+    watts         real,
+    temp_c        real,
+    fan_min_rpm   real,
+    PRIMARY KEY (connection_id, host_ref, ts)
+);

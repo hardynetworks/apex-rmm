@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -249,9 +250,19 @@ type vmView struct {
 
 type hostView struct {
 	vsphere.Host
-	CPUPct float64 `json:"cpu_pct"`
-	MemPct float64 `json:"mem_pct"`
-	UIURL  string  `json:"ui_url"`
+	CPUPct    float64  `json:"cpu_pct"`
+	MemPct    float64  `json:"mem_pct"`
+	UIURL     string   `json:"ui_url"`
+	TempC     *float64 `json:"temp_c,omitempty"`      // hottest temperature sensor
+	Fans      int      `json:"fans"`                  // fans with a reading
+	FanMinRPM *float64 `json:"fan_min_rpm,omitempty"` // slowest fan
+}
+
+// powerSummary totals the draw of every host that reports it.
+type powerSummary struct {
+	TotalWatts    float64 `json:"total_watts"`
+	HostsWithData int     `json:"hosts_reporting"`
+	KWhPerDay     float64 `json:"kwh_per_day"`
 }
 
 type dsView struct {
@@ -295,8 +306,19 @@ func (s *Server) vsphereInventory(w http.ResponseWriter, r *http.Request) {
 		endpoint, _ := vsphere.ParseURL(conn0["url"].(string))
 		links := s.vsAgentLinks(ctx, inv.VMs)
 		hosts := make([]hostView, 0, len(inv.Hosts))
+		var pw powerSummary
 		for _, h := range inv.Hosts {
 			v := hostView{Host: h, CPUPct: h.CPUPct(), MemPct: h.MemPct()}
+			if t, ok := h.MaxTempC(); ok {
+				v.TempC = &t
+			}
+			if n, rpm := h.FanSummary(); n > 0 {
+				v.Fans, v.FanMinRPM = n, &rpm
+			}
+			if h.PowerWatts != nil {
+				pw.TotalWatts += *h.PowerWatts
+				pw.HostsWithData++
+			}
 			if endpoint != nil {
 				v.UIURL = vsphere.HostLink(endpoint, inv.About, h.Ref)
 			}
@@ -322,9 +344,32 @@ func (s *Server) vsphereInventory(w http.ResponseWriter, r *http.Request) {
 		if alarms == nil {
 			alarms = []vsphere.Alarm{}
 		}
-		out["inventory"] = map[string]any{"about": inv.About, "collected_at": inv.CollectedAt, "updated_at": at, "hosts": hosts, "vms": vms, "datastores": dss, "alarms": alarms}
+		pw.KWhPerDay = pw.TotalWatts * 24 / 1000
+		out["inventory"] = map[string]any{"about": inv.About, "collected_at": inv.CollectedAt, "updated_at": at, "hosts": hosts, "vms": vms, "datastores": dss, "alarms": alarms, "power": pw}
 	}
 	writeJSON(w, 200, out)
+}
+
+// vsphereHostPower returns power / temperature / fan history for one host,
+// averaged into at most ~300 buckets.
+func (s *Server) vsphereHostPower(w http.ResponseWriter, r *http.Request) {
+	hours := 24
+	if v, err := strconv.Atoi(r.URL.Query().Get("hours")); err == nil && v >= 1 && v <= 720 {
+		hours = v
+	}
+	bucket := hours * 3600 / 300
+	if bucket < 60 {
+		bucket = 60
+	}
+	rows, err := s.db.Maps(r.Context(), `SELECT to_timestamp(floor(extract(epoch FROM ts)/$4)*$4) AS ts,
+			round(avg(watts)::numeric,1)::float8 AS watts, round(avg(temp_c)::numeric,1)::float8 AS temp_c, round(avg(fan_min_rpm)::numeric,0)::float8 AS fan_min_rpm
+		FROM vsphere_host_power WHERE connection_id=$1 AND host_ref=$2 AND ts > now() - make_interval(hours => $3)
+		GROUP BY 1 ORDER BY 1`, chi.URLParam(r, "id"), chi.URLParam(r, "ref"), hours, bucket)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, rows)
 }
 
 // vsAgentLinks finds the Apex agents installed in the inventory's VMs.

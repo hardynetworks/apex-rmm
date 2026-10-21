@@ -224,8 +224,29 @@ func (m *vsphereMgr) poll(ctx context.Context, id string) error {
 	m.mu.Lock()
 	m.fails[id] = 0
 	m.mu.Unlock()
+	m.s.recordHostPower(ctx, id, inv)
 	m.s.reconcileSourceAlerts(ctx, vsAlertPrefix(id), vsphereAlerts(c, inv), c.Notify, c.CreateTickets, c.ClientID, c.Name)
 	return nil
+}
+
+// recordHostPower stores one history point per host that reports power draw,
+// temperature or fan speed. Failures are ignored: history is best effort.
+func (s *Server) recordHostPower(ctx context.Context, id string, inv *vsphere.Inventory) {
+	for _, h := range inv.Hosts {
+		var watts, temp, fan *float64
+		watts = h.PowerWatts
+		if t, ok := h.MaxTempC(); ok {
+			temp = &t
+		}
+		if n, rpm := h.FanSummary(); n > 0 {
+			fan = &rpm
+		}
+		if watts == nil && temp == nil && fan == nil {
+			continue
+		}
+		_, _ = s.db.Exec(ctx, `INSERT INTO vsphere_host_power (connection_id, host_ref, ts, watts, temp_c, fan_min_rpm)
+			VALUES ($1,$2,date_trunc('second', now()),$3,$4,$5) ON CONFLICT DO NOTHING`, id, h.Ref, watts, temp, fan)
+	}
 }
 
 func (m *vsphereMgr) dropSessionOnly(id string) {

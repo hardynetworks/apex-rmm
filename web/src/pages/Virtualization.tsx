@@ -5,6 +5,7 @@ import { Icon } from '../icons';
 import { Link, navigate, useQuery } from '../router';
 import { Badge, Button, Card, Empty, ErrorBox, Field, Meter, Modal, PageHeader, SearchInput, Spinner, Tabs, attempt, confirmDialog, fmtBytes, fmtDate, timeAgo, toast, useFetch } from '../ui';
 import { useCan } from '../user';
+import { LineChart } from '../chart';
 
 // ---------- helpers ----------
 
@@ -139,9 +140,10 @@ function Inventory({ conn, tab, tech, admin, onConn }: { conn: any; tab: string;
         <div class={'stat ' + (hostProblems ? 'stat-warning' : '')}><div class="stat-icon"><Icon name="server" /></div><div><div class="stat-label">Hosts</div><div class="stat-value">{hosts.length}</div><div class="stat-sub">{hostProblems ? `${hostProblems} need attention` : 'all healthy'}</div></div></div>
         <div class="stat"><div class="stat-icon"><Icon name="box" /></div><div><div class="stat-label">Virtual machines</div><div class="stat-value">{on}<small> / {total} on</small></div><div class="stat-sub">{withAgent} with an Apex agent</div></div></div>
         <div class={'stat ' + (worstDs >= conn.ds_crit_pct ? 'stat-critical' : worstDs >= conn.ds_warn_pct ? 'stat-warning' : '')}><div class="stat-icon"><Icon name="disk" /></div><div><div class="stat-label">Datastores</div><div class="stat-value">{dss.length}</div><div class="stat-sub">fullest {Math.round(worstDs)}%</div></div></div>
+        {inv.power?.hosts_reporting > 0 && <div class="stat"><div class="stat-icon"><Icon name="power" /></div><div><div class="stat-label">Host power draw</div><div class="stat-value">{Math.round(inv.power.total_watts)}<small> W</small></div><div class="stat-sub">≈ {inv.power.kwh_per_day.toFixed(1)} kWh/day · {inv.power.hosts_reporting} of {hosts.length} hosts reporting</div></div></div>}
         <Link href="/alerts" class={'stat ' + (conn.open_alerts ? 'stat-warning' : '')}><div class="stat-icon"><Icon name="bell" /></div><div><div class="stat-label">Open alerts</div><div class="stat-value">{conn.open_alerts || 0}</div><div class="stat-sub">{alarms.length} vCenter alarms</div></div></Link>
       </div>
-      {tab === 'hosts' && <Hosts hosts={hosts} />}
+      {tab === 'hosts' && <Hosts hosts={hosts} connId={conn.id} />}
       {tab === 'vms' && <VMs conn={conn} vms={vms} tech={tech} admin={admin} reload={() => reload(true)} refresh={refresh} busy={busy} />}
       {tab === 'datastores' && <Datastores dss={dss} conn={conn} />}
       {tab === 'alarms' && <Alarms alarms={alarms} />}
@@ -151,39 +153,82 @@ function Inventory({ conn, tab, tech, admin, onConn }: { conn: any; tab: string;
   );
 }
 
-function Hosts({ hosts }: { hosts: any[] }) {
+const fmtW = (w?: number | null) => (w == null ? '—' : Math.round(w) + ' W');
+const KIND_LABEL: Record<string, string> = { temperature: 'Temperatures', fan: 'Fans', power: 'Power supplies', voltage: 'Voltages', current: 'Currents', other: 'Other sensors' };
+const tempTone = (st: string) => (st === 'red' ? 'text-crit' : st === 'yellow' ? 'text-warn' : '');
+
+function Hosts({ hosts, connId }: { hosts: any[]; connId: string }) {
+  const [open, setOpen] = useState<string | null>(null);
   if (!hosts.length) return <Card><Empty icon="server" title="No hosts" /></Card>;
+  const anyPower = hosts.some((h) => h.power_watts != null);
+  const anyHw = hosts.some((h) => h.temp_c != null || h.fans > 0);
   return (
     <Card pad={false}>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Host</th><th>State</th><th class="hide-sm">CPU</th><th class="hide-sm">Memory</th><th>VMs</th><th class="hide-md">Hardware</th><th class="hide-md">ESXi</th><th class="hide-sm">Uptime</th></tr></thead>
+          <thead><tr><th>Host</th><th>State</th><th class="hide-sm">CPU</th><th class="hide-sm">Memory</th><th>VMs</th>{anyPower && <th>Power</th>}{anyHw && <th class="hide-sm">Temp / fans</th>}<th class="hide-md">Hardware</th><th class="hide-md">ESXi</th><th class="hide-sm">Uptime</th></tr></thead>
           <tbody>
             {hosts.map((h) => (
-              <tr key={h.ref}>
-                <td>
-                  <div class="dev-cell">
-                    <Badge tone={statusTone(h.status)}>{h.status === 'gray' ? 'n/a' : h.status}</Badge>
-                    <div>
-                      <a href={h.ui_url} target="_blank" rel="noopener noreferrer" class="strong">{h.name} <Icon name="external" size={12} /></a>
-                      <div class="muted small">{h.cluster || 'standalone'}</div>
-                      {h.sensors?.map((s: any) => <div key={s.name} class={'small ' + (s.state === 'red' ? 'text-crit' : 'text-warn')}><Icon name="alert" size={12} /> {s.name} {s.state}{s.reading ? ` (${s.reading})` : ''}</div>)}
+              <Fragment key={h.ref}>
+                <tr>
+                  <td>
+                    <div class="dev-cell">
+                      <Badge tone={statusTone(h.status)}>{h.status === 'gray' ? 'n/a' : h.status}</Badge>
+                      <div>
+                        <a href={h.ui_url} target="_blank" rel="noopener noreferrer" class="strong">{h.name} <Icon name="external" size={12} /></a>
+                        <div class="muted small">{h.cluster || 'standalone'}</div>
+                        {h.sensors?.map((s: any) => <div key={s.name} class={'small ' + (s.state === 'red' ? 'text-crit' : 'text-warn')}><Icon name="alert" size={12} /> {s.name} {s.state}{s.reading ? ` (${s.reading})` : ''}</div>)}
+                        {(h.readings?.length > 0 || h.power_watts != null) && <button class="linklike small" onClick={() => setOpen(open === h.ref ? null : h.ref)}>{open === h.ref ? 'hide hardware details' : 'hardware details'}</button>}
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td>{hostState(h)}</td>
-                <td class="hide-sm">{h.connection_state === 'connected' ? <Meter value={h.cpu_pct} /> : <span class="muted">—</span>}<div class="muted small">{h.cpu_cores} cores · {(h.cpu_mhz / 1000).toFixed(1)} GHz</div></td>
-                <td class="hide-sm">{h.connection_state === 'connected' ? <Meter value={h.mem_pct} /> : <span class="muted">—</span>}<div class="muted small">{fmtBytes(h.mem_total, 0)}</div></td>
-                <td>{h.vms_on}<span class="muted"> / {h.vms}</span></td>
-                <td class="hide-md small">{h.vendor} {h.model}<div class="muted truncate" title={h.cpu_model}>{h.cpu_model}</div></td>
-                <td class="hide-md small">{h.version}<div class="muted">build {h.build}</div></td>
-                <td class="hide-sm nowrap">{fmtUp(h.uptime_sec)}</td>
-              </tr>
+                  </td>
+                  <td>{hostState(h)}</td>
+                  <td class="hide-sm">{h.connection_state === 'connected' ? <Meter value={h.cpu_pct} /> : <span class="muted">—</span>}<div class="muted small">{h.cpu_cores} cores · {(h.cpu_mhz / 1000).toFixed(1)} GHz</div></td>
+                  <td class="hide-sm">{h.connection_state === 'connected' ? <Meter value={h.mem_pct} /> : <span class="muted">—</span>}<div class="muted small">{fmtBytes(h.mem_total, 0)}</div></td>
+                  <td>{h.vms_on}<span class="muted"> / {h.vms}</span></td>
+                  {anyPower && <td class="nowrap">{fmtW(h.power_watts)}{h.power_cap_watts != null && <div class="muted small">cap {Math.round(h.power_cap_watts)} W</div>}</td>}
+                  {anyHw && <td class="hide-sm nowrap">{h.temp_c != null ? `${Math.round(h.temp_c)} °C` : '—'}<div class="muted small">{h.fans > 0 ? `${h.fans} fans · min ${Math.round(h.fan_min_rpm)} RPM` : 'no fan data'}</div></td>}
+                  <td class="hide-md small">{h.vendor} {h.model}<div class="muted truncate" title={h.cpu_model}>{h.cpu_model}</div></td>
+                  <td class="hide-md small">{h.version}<div class="muted">build {h.build}</div></td>
+                  <td class="hide-sm nowrap">{fmtUp(h.uptime_sec)}</td>
+                </tr>
+                {open === h.ref && <tr><td colSpan={12}><HostHardware host={h} connId={connId} /></td></tr>}
+              </Fragment>
             ))}
           </tbody>
         </table>
       </div>
     </Card>
+  );
+}
+
+/** Sensor readings and power / temperature history for one host. */
+function HostHardware({ host, connId }: { host: any; connId: string }) {
+  const [hours, setHours] = useState(24);
+  const { data } = useFetch<any[]>(`/vsphere/connections/${connId}/hosts/${host.ref}/power?hours=${hours}`, [host.ref, hours]);
+  const pts = data || [];
+  const groups: Record<string, any[]> = {};
+  for (const r of host.readings || []) (groups[r.kind] ||= []).push(r);
+  return (
+    <div class="pad">
+      <div class="toolbar">
+        <strong class="grow">{host.name}: power, temperature and fans</strong>
+        {[[1, '1h'], [24, '24h'], [168, '7d'], [720, '30d']].map(([h, l]) => <Button key={h} size="sm" variant={hours === h ? 'primary' : 'default'} onClick={() => setHours(h as number)}>{l as string}</Button>)}
+      </div>
+      <div class="grid-2">
+        {host.power_watts != null || pts.some((p) => p.watts != null) ? <Card title="Power draw (W)"><LineChart data={pts} series={[{ key: 'watts', label: 'Watts', color: 'var(--series-1)' }]} format={(v) => Math.round(v) + ' W'} empty="History builds up as the host is polled" /></Card> : null}
+        {pts.some((p) => p.temp_c != null) && <Card title="Hottest sensor (°C)"><LineChart data={pts} series={[{ key: 'temp_c', label: '°C', color: 'var(--series-2)' }]} format={(v) => v.toFixed(0) + ' °C'} /></Card>}
+        {pts.some((p) => p.fan_min_rpm != null) && <Card title="Slowest fan (RPM)"><LineChart data={pts} series={[{ key: 'fan_min_rpm', label: 'RPM', color: 'var(--series-1)' }]} format={(v) => Math.round(v) + ' RPM'} /></Card>}
+      </div>
+      {Object.keys(groups).length === 0
+        ? <p class="muted small">This host reports no hardware sensors through vSphere{host.power_watts == null ? ' and no power counter' : ''}. Many servers need the vendor's ESXi image or CIM provider for sensor data; some only expose power draw.</p>
+        : Object.entries(groups).map(([kind, rs]) => (
+          <div key={kind} class="mb">
+            <div class="muted small">{KIND_LABEL[kind] || kind}</div>
+            <div class="chips">{rs.map((r: any) => <span key={r.name} class={'chip ' + tempTone(r.state)} style="cursor:default" title={r.state}>{r.name}: <strong>{r.value} {r.unit}</strong></span>)}</div>
+          </div>
+        ))}
+    </div>
   );
 }
 

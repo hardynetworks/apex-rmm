@@ -232,6 +232,52 @@ func TestVSphereEndToEnd(t *testing.T) {
 		t.Errorf("alert should auto-resolve, open=%d", n)
 	}
 
+	// host power / temperature / fans: stored readings show up in the view and in the history endpoint
+	{
+		w1, w2 := 310.0, 190.0
+		pinv, _, _ := e.s.loadInventory(ctx, id)
+		pinv.Hosts[0].PowerWatts, pinv.Hosts[1].PowerWatts = &w1, &w2
+		pinv.Hosts[0].Readings = []vsphere.Reading{
+			{Name: "CPU1 Temp", Kind: "temperature", Value: 61, Unit: "C", State: "green"},
+			{Name: "Fan 1", Kind: "fan", Value: 4200, Unit: "RPM", State: "green"},
+			{Name: "Fan 2", Kind: "fan", Value: 3900, Unit: "RPM", State: "green"},
+		}
+		praw, _ := json.Marshal(pinv)
+		_, _ = e.s.db.Exec(ctx, `UPDATE vsphere_inventory SET data=$2 WHERE connection_id=$1`, id, praw)
+		e.s.recordHostPower(ctx, id, pinv)
+		_, m, raw = e.do("viewer", "GET", "/api/vsphere/connections/"+id+"/inventory", nil)
+		im, _ := m["inventory"].(map[string]any)
+		pw, _ := im["power"].(map[string]any)
+		if pw["total_watts"] != 500.0 || pw["hosts_reporting"] != 2.0 {
+			t.Errorf("power summary wrong: %v", pw)
+		}
+		if kwh, _ := pw["kwh_per_day"].(float64); kwh < 11.9 || kwh > 12.1 {
+			t.Errorf("kwh/day = %v, want 12", kwh)
+		}
+		h0 := im["hosts"].([]any)[0].(map[string]any)
+		if h0["temp_c"] != 61.0 || h0["fans"] != 2.0 || h0["fan_min_rpm"] != 3900.0 {
+			t.Errorf("host view wrong: temp=%v fans=%v min=%v", h0["temp_c"], h0["fans"], h0["fan_min_rpm"])
+		}
+		hist := "/api/vsphere/connections/" + id + "/hosts/" + pinv.Hosts[0].Ref + "/power?hours=24"
+		code, _, raw = e.do("viewer", "GET", hist, nil)
+		var pts []map[string]any
+		_ = json.Unmarshal(raw, &pts)
+		if code != 200 || len(pts) != 1 || pts[0]["watts"] != 310.0 || pts[0]["temp_c"] != 61.0 || pts[0]["fan_min_rpm"] != 3900.0 {
+			t.Errorf("history wrong: %d %s", code, raw)
+		}
+		if c, _, _ := e.do("viewer", "GET", hist+"&hours=99999", nil); c != 200 {
+			t.Errorf("out-of-range hours should fall back, got %d", c)
+		}
+		// a host with no readings records nothing
+		var cnt int
+		_ = e.s.db.QueryRow(ctx, `SELECT count(*) FROM vsphere_host_power WHERE connection_id=$1`, id).Scan(&cnt)
+		if cnt != 2 {
+			t.Errorf("expected 2 history rows (only hosts with data), got %d", cnt)
+		}
+		// restore the real inventory so later steps see unmodified data
+		e.pollNow(id)
+	}
+
 	// power: technician ok, viewer forbidden
 	ref, name := "", ""
 	for _, v := range vms {
@@ -357,5 +403,9 @@ func TestVSphereEndToEnd(t *testing.T) {
 	_ = e.s.db.QueryRow(ctx, `SELECT count(*) FROM vsphere_inventory WHERE connection_id=$1`, id).Scan(&leak)
 	if leak != 0 {
 		t.Errorf("inventory not removed")
+	}
+	_ = e.s.db.QueryRow(ctx, `SELECT count(*) FROM vsphere_host_power WHERE connection_id=$1`, id).Scan(&leak)
+	if leak != 0 {
+		t.Errorf("power history not removed with the connection")
 	}
 }

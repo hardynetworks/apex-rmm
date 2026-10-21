@@ -137,6 +137,7 @@ func (s *Server) routes() http.Handler {
 			r.Get("/vsphere/connections", s.listVSphere)
 			r.Get("/vsphere/connections/{id}/inventory", s.vsphereInventory)
 			r.Get("/vsphere/connections/{id}/deploys", s.listVSphereDeploys)
+			r.Get("/vsphere/connections/{id}/hosts/{ref}/power", s.vsphereHostPower)
 
 			// technician+
 			r.Group(func(r chi.Router) {
@@ -277,6 +278,7 @@ func (s *Server) cleanupLoop(ctx context.Context) {
 	defer t.Stop()
 	for {
 		_, _ = s.db.Exec(ctx, `DELETE FROM device_metrics WHERE ts < now() - make_interval(days => $1)`, s.conf().MetricsRetentionDays)
+		_, _ = s.db.Exec(ctx, `DELETE FROM vsphere_host_power WHERE ts < now() - interval '30 days'`)
 		_, _ = s.db.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
 		_, _ = s.db.Exec(ctx, `UPDATE job_results SET status='timeout', finished_at=now() WHERE status='running' AND started_at < now() - interval '6 hours'`)
 		_, _ = s.db.Exec(ctx, `DELETE FROM audit_log WHERE created_at < now() - interval '365 days'`)

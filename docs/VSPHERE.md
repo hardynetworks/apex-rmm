@@ -54,6 +54,18 @@ webhook/ticket settings):
 - VM snapshots older than N days (default 3, 0 = off)
 - Unacknowledged vCenter alarms (can be switched off)
 
+## Host power, temperature and fans
+
+On the **Hosts** tab Apex shows, for each ESXi host that reports it:
+
+- **Power draw (W)** and any configured power cap, from vSphere's real-time `power.power.average` counter. The summary tile adds up all hosts and estimates kWh/day (multiply by your rate for cost).
+- **Hottest temperature sensor** and **fan count / slowest fan** from the host's hardware health sensors.
+- **Hardware details**: every numeric sensor (temperatures, fans, PSU output, voltages) plus 1 h / 24 h / 7 d / 30 d history charts. History is stored once per poll and kept for 30 days.
+
+Sensors that vSphere flags yellow/red still raise alerts (see Alerts above). Apex does not add its own temperature or wattage thresholds.
+
+What you actually see depends on the server: ESXi only exposes sensors the hardware vendor's drivers/CIM providers publish. Hosts using the generic ESXi image often show power draw but few or no temperature/fan sensors; Dell, HPE and Lenovo vendor images usually show many. Hosts that report neither simply show no power or hardware columns.
+
 ## 3. Power actions
 
 Technicians and admins can power on, shut down (guest, needs Tools), restart (guest), power off,
