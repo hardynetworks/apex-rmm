@@ -405,3 +405,7 @@ Patch management (Windows Update / apt / softwareupdate), Wayland capture via Pi
 ## License
 
 [MIT](LICENSE)
+
+## VMware vSphere
+
+Connect vCenter under **Virtualization** to monitor hosts/VMs/datastores, get alerts, power VMs on and off and push the agent into guests via VMware Tools. See [docs/VSPHERE.md](docs/VSPHERE.md).

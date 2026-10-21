@@ -16,6 +16,7 @@ require (
 	github.com/pion/webrtc/v4 v4.2.3
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.25.10
+	github.com/vmware/govmomi v0.52.0
 	golang.org/x/crypto v0.45.0
 	golang.org/x/oauth2 v0.32.0
 	golang.org/x/sys v0.40.0
