@@ -131,7 +131,7 @@ func (s *Server) deployVSphere(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if needLinux && (in.Linux == nil || in.Linux.Username == "" || in.Linux.Password == "") {
-		fail(w, badRequest("enter a Linux account (root, or a user with passwordless sudo) for the Linux VMs"))
+		fail(w, badRequest("enter a Linux account (root, or a user that can use sudo) for the Linux VMs"))
 		return
 	}
 
