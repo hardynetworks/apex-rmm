@@ -289,6 +289,13 @@ func (a *Agent) handle(env proto.Envelope) {
 	case proto.TypeUpdateAgent:
 		var u proto.UpdateAgent
 		_ = json.Unmarshal(env.Data, &u)
+		if buildVariant != "" { // the server only knows the device's arch; fetch our own variant
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if url, sha, err := a.latestBuild(ctx); err == nil {
+				u.URL, u.SHA256 = url, sha
+			}
+			cancel()
+		}
 		err := selfUpdate(u.URL, u.SHA256)
 		a.reply(env.ID, nil, err)
 		if err == nil {

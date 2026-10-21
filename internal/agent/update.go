@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -56,6 +57,10 @@ func selfUpdate(url, want string) error {
 		os.Remove(tmp)
 		return fmt.Errorf("checksum mismatch (got %s)", got)
 	}
+	if err := checkRuns(tmp); err != nil {
+		os.Remove(tmp)
+		return err
+	}
 	if runtime.GOOS == "windows" {
 		_ = os.Remove(dst + ".old")
 		if err := os.Rename(dst, dst+".old"); err != nil {
@@ -67,6 +72,50 @@ func selfUpdate(url, want string) error {
 	}
 	log.Printf("agent updated; restarting")
 	return nil
+}
+
+// checkRuns makes sure the downloaded agent can start on this system before it replaces the
+// running one, so a build that can't run here (wrong C library, wrong CPU) never takes the agent
+// offline. Only on Linux, where builds differ by C library.
+func checkRuns(p string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, p, "version").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("the new agent build can't run on this system (%v: %s); keeping the current one", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// platformArch is the arch name the server knows this build by: the static Linux build
+// asks for its own variant ("amd64-static").
+func platformArch() string {
+	if buildVariant != "" {
+		return runtime.GOARCH + "-" + buildVariant
+	}
+	return runtime.GOARCH
+}
+
+// latestBuild asks the server for the current agent build for this platform.
+func (a *Agent) latestBuild(ctx context.Context) (url, sha string, err error) {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.Server+"/api/agent/version?os="+runtime.GOOS+"&arch="+platformArch(), nil)
+	resp, err := httpClient().Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	var v struct {
+		SHA256 string `json:"sha256"`
+		URL    string `json:"url"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&v)
+	if resp.StatusCode != 200 || v.SHA256 == "" {
+		return "", "", fmt.Errorf("no agent build for %s/%s on the server", runtime.GOOS, platformArch())
+	}
+	return v.URL, v.SHA256, nil
 }
 
 // restartSelf exits so the service manager restarts us on the new binary.
@@ -92,21 +141,11 @@ func (a *Agent) updateLoop(ctx context.Context) {
 		if !samePath(self, InstallPath()) {
 			continue // not running from the installed location (dev mode)
 		}
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.Server+"/api/agent/version?os="+runtime.GOOS+"&arch="+runtime.GOARCH, nil)
-		resp, err := httpClient().Do(req)
-		if err != nil {
+		url, sha, err := a.latestBuild(ctx)
+		if err != nil || strings.EqualFold(sha, fileSHA256(InstallPath())) {
 			continue
 		}
-		var v struct {
-			SHA256 string `json:"sha256"`
-			URL    string `json:"url"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&v)
-		resp.Body.Close()
-		if v.SHA256 == "" || strings.EqualFold(v.SHA256, fileSHA256(InstallPath())) {
-			continue
-		}
-		if err := selfUpdate(v.URL, v.SHA256); err != nil {
+		if err := selfUpdate(url, sha); err != nil {
 			log.Printf("auto-update failed: %v", err)
 			continue
 		}
