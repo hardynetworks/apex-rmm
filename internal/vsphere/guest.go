@@ -1,8 +1,11 @@
 package vsphere
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -50,6 +53,8 @@ type guestProc interface {
 	// Wait blocks until the process has exited and returns its exit code.
 	Wait(ctx context.Context, pid int64) (int32, error)
 	ReadFile(ctx context.Context, path string, max int64) (string, error)
+	// WriteFile creates a file readable only by the guest account (mode 0600 on Linux).
+	WriteFile(ctx context.Context, path string, data []byte) error
 	DeleteFile(ctx context.Context, path string) error
 }
 
@@ -74,21 +79,32 @@ func WindowsInstallCommand(installURL string) (program, args string, err error) 
 }
 
 // LinuxInstallCommand returns the program and arguments that download and run
-// the Apex shell installer. With sudo=true the installer runs through
-// "sudo -n" (the account needs passwordless sudo); root needs no sudo.
-func LinuxInstallCommand(installURL string, sudo bool) (program, args string, err error) {
+// the Apex shell installer. Root runs it directly. Any other account runs it
+// through sudo; when passFile is set, sudo reads the account's password from
+// that file (mode 0600, opened and deleted before anything else runs), so
+// accounts that have to type their password for sudo work too.
+func LinuxInstallCommand(installURL string, sudo bool, passFile string) (program, args string, err error) {
 	if !safeURLRe.MatchString(installURL) {
 		return "", "", fmt.Errorf("install URL %q contains unexpected characters", installURL)
 	}
-	pre := ""
-	if sudo {
-		pre = "sudo -n "
+	if passFile != "" && !safePathRe.MatchString(passFile) {
+		return "", "", fmt.Errorf("unexpected password file path %q", passFile)
 	}
-	inner := `{ F=/tmp/apex-install.$$.sh; ` +
+	open, run := "", "sh $F"
+	if sudo {
+		run = "sudo -n sh $F"
+		if passFile != "" {
+			open = `exec 3<` + passFile + ` && rm -f ` + passFile + ` || exit 1; `
+			run = `sudo -S -p "" sh $F <&3`
+		}
+	}
+	inner := `{ ` + open + `F=/tmp/apex-install.$$.sh; ` +
 		`if command -v curl >/dev/null 2>&1; then curl -fsSL ` + installURL + ` -o $F; else wget -qO $F ` + installURL + `; fi && ` +
-		pre + `sh $F; rc=$?; rm -f $F; exit $rc; } >` + linuxLog + ` 2>&1`
+		run + `; rc=$?; rm -f $F; exit $rc; } >` + linuxLog + ` 2>&1`
 	return "/bin/sh", "-c '" + inner + "'", nil
 }
+
+var safePathRe = regexp.MustCompile(`^/tmp/[A-Za-z0-9._-]+$`)
 
 // InstallAgent runs the Apex installer inside a guest VM through VMware Tools.
 // installURL is the one-line installer served by the Apex server
@@ -105,10 +121,10 @@ func (c *Conn) InstallAgent(ctx context.Context, vmRef, osFamily string, auth Gu
 		return nil, guestErr(err)
 	}
 	g := &govGuest{c: c, pm: pm, fm: fm, auth: &types.NamePasswordAuthentication{Username: auth.Username, Password: auth.Password}}
-	return runInstall(ctx, g, osFamily, auth.Username, installURL, timeout)
+	return runInstall(ctx, g, osFamily, auth, installURL, timeout)
 }
 
-func runInstall(ctx context.Context, g guestProc, osFamily, username, installURL string, timeout time.Duration) (*InstallResult, error) {
+func runInstall(ctx context.Context, g guestProc, osFamily string, auth GuestAuth, installURL string, timeout time.Duration) (*InstallResult, error) {
 	var program, args, logPath string
 	var err error
 	switch osFamily {
@@ -116,8 +132,27 @@ func runInstall(ctx context.Context, g guestProc, osFamily, username, installURL
 		program, args, err = WindowsInstallCommand(installURL)
 		logPath = windowsLog
 	case "linux":
-		root := strings.EqualFold(username, "root")
-		program, args, err = LinuxInstallCommand(installURL, !root)
+		root := strings.EqualFold(auth.Username, "root")
+		passFile := ""
+		if !root && auth.Password != "" {
+			// sudo may ask for the account's password: hand it over in a private file
+			// (never on the command line, where other users could see it)
+			var rnd [8]byte
+			_, _ = rand.Read(rnd[:])
+			passFile = "/tmp/.apex-sudo-" + hex.EncodeToString(rnd[:])
+			wctx, wcancel := context.WithTimeout(ctx, 30*time.Second)
+			err := g.WriteFile(wctx, passFile, []byte(auth.Password+"\n"))
+			wcancel()
+			if err != nil {
+				return nil, fmt.Errorf("couldn't hand the sudo password to the guest: %w", err)
+			}
+			defer func() { // normally already removed by the command itself
+				dctx, dcancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+				_ = g.DeleteFile(dctx, passFile)
+				dcancel()
+			}()
+		}
+		program, args, err = LinuxInstallCommand(installURL, !root, passFile)
 		logPath = linuxLog
 	default:
 		return nil, ErrUnsupportedGuest
@@ -142,6 +177,11 @@ func runInstall(ctx context.Context, g guestProc, osFamily, username, installURL
 	defer lcancel()
 	if log, err := g.ReadFile(lctx, logPath, 16<<10); err == nil {
 		res.Log = tail(strings.TrimSpace(log), 4000)
+	}
+	if strings.Contains(res.Log, "incorrect password") || strings.Contains(res.Log, "a password is required") {
+		res.Log += "\n\nsudo didn't accept the password. Check it's the password of this account, and that the account is allowed to use sudo (for example a member of the sudo or wheel group)."
+	} else if strings.Contains(res.Log, "is not in the sudoers file") || strings.Contains(res.Log, "may not run sudo") {
+		res.Log += "\n\nThis account isn't allowed to use sudo. Use root, or an account in the sudo/wheel group."
 	}
 	_ = g.DeleteFile(lctx, logPath)
 	if werr != nil {
@@ -211,6 +251,21 @@ func (g *govGuest) ReadFile(ctx context.Context, path string, max int64) (string
 	defer rc.Close()
 	b, err := io.ReadAll(io.LimitReader(rc, max))
 	return string(b), err
+}
+
+func (g *govGuest) WriteFile(ctx context.Context, path string, data []byte) error {
+	attrs := &types.GuestPosixFileAttributes{Permissions: 0o600}
+	u, err := g.fm.InitiateFileTransferToGuest(ctx, g.auth, path, attrs, int64(len(data)), true)
+	if err != nil {
+		return guestErr(err)
+	}
+	tu, err := g.fm.TransferURL(ctx, u)
+	if err != nil {
+		return err
+	}
+	p := soap.DefaultUpload
+	p.ContentLength = int64(len(data))
+	return g.c.c.Client.Upload(ctx, bytes.NewReader(data), tu, &p)
 }
 
 func (g *govGuest) DeleteFile(ctx context.Context, path string) error {

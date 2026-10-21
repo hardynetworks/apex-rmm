@@ -218,14 +218,21 @@ func TestInstallCommands(t *testing.T) {
 		}
 	}
 
-	_, args, err = LinuxInstallCommand("https://rmm.example.com/install/AbC-_123/linux.sh", true)
+	_, args, err = LinuxInstallCommand("https://rmm.example.com/install/AbC-_123/linux.sh", true, "")
 	if err != nil || !strings.HasPrefix(args, "-c '") || !strings.HasSuffix(args, "'") || !strings.Contains(args, "sudo -n sh $F") {
 		t.Fatalf("sudo command wrong: %q %v", args, err)
 	}
 	if strings.Count(args, "'") != 2 {
 		t.Fatalf("the command must contain exactly one quoted argument: %q", args)
 	}
-	_, args, _ = LinuxInstallCommand("https://rmm.example.com/install/x/linux.sh", false)
+	_, args, err = LinuxInstallCommand("https://rmm.example.com/install/AbC-_123/linux.sh", true, "/tmp/.apex-sudo-0123abcd")
+	if err != nil || !strings.Contains(args, `sudo -S -p "" sh $F <&3`) || !strings.Contains(args, "rm -f /tmp/.apex-sudo-0123abcd") || strings.Count(args, "'") != 2 {
+		t.Fatalf("sudo-with-password command wrong: %q %v", args, err)
+	}
+	if _, _, err := LinuxInstallCommand("https://rmm.example.com/x", true, "/tmp/a;reboot"); err == nil {
+		t.Fatal("unsafe password file path accepted")
+	}
+	_, args, _ = LinuxInstallCommand("https://rmm.example.com/install/x/linux.sh", false, "")
 	if strings.Contains(args, "sudo") {
 		t.Fatalf("root must not use sudo: %q", args)
 	}
@@ -235,7 +242,7 @@ func TestInstallCommands(t *testing.T) {
 		"https://x.example.com/a;reboot", "https://x.example.com/a b", "https://x/'$(id)'",
 		"https://x.example.com/a\"b", "file:///etc/passwd", "https://x.example.com/a`id`", "https://x.example.com/a|b",
 	} {
-		if _, _, err := LinuxInstallCommand(bad, false); err == nil {
+		if _, _, err := LinuxInstallCommand(bad, false, ""); err == nil {
 			t.Errorf("linux accepted %q", bad)
 		}
 		if _, _, err := WindowsInstallCommand(bad); err == nil {
@@ -249,7 +256,8 @@ type fakeGuest struct {
 	exit       int32
 	waitErr    error
 	log        string
-	deleted    string
+	deleted    []string
+	written    map[string]string
 }
 
 func (f *fakeGuest) Start(_ context.Context, p, a string) (int64, error) {
@@ -260,32 +268,64 @@ func (f *fakeGuest) Wait(context.Context, int64) (int32, error) { return f.exit,
 func (f *fakeGuest) ReadFile(_ context.Context, path string, _ int64) (string, error) {
 	return f.log, nil
 }
-func (f *fakeGuest) DeleteFile(_ context.Context, path string) error { f.deleted = path; return nil }
+func (f *fakeGuest) WriteFile(_ context.Context, path string, data []byte) error {
+	if f.written == nil {
+		f.written = map[string]string{}
+	}
+	f.written[path] = string(data)
+	return nil
+}
+func (f *fakeGuest) DeleteFile(_ context.Context, path string) error {
+	f.deleted = append(f.deleted, path)
+	return nil
+}
+func (f *fakeGuest) wasDeleted(p string) bool {
+	for _, d := range f.deleted {
+		if d == p {
+			return true
+		}
+	}
+	return false
+}
 
 func TestRunInstall(t *testing.T) {
 	ctx := context.Background()
 	f := &fakeGuest{exit: 0, log: "Apex RMM agent installed.\n"}
-	res, err := runInstall(ctx, f, "linux", "root", "https://rmm.example.com/install/t/linux.sh", time.Minute)
+	res, err := runInstall(ctx, f, "linux", GuestAuth{"root", "pw"}, "https://rmm.example.com/install/t/linux.sh", time.Minute)
 	if err != nil || res.ExitCode != 0 || !strings.Contains(res.Log, "installed") {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if f.prog != "/bin/sh" || strings.Contains(f.args, "sudo") || f.deleted != "/tmp/apex-deploy.log" {
+	if f.prog != "/bin/sh" || strings.Contains(f.args, "sudo") || !f.wasDeleted("/tmp/apex-deploy.log") || len(f.written) != 0 {
 		t.Fatalf("root install wrong: %s %s deleted=%s", f.prog, f.args, f.deleted)
 	}
 
 	f = &fakeGuest{exit: 1, log: "curl: (22) The requested URL returned error: 404"}
-	res, err = runInstall(ctx, f, "linux", "deploy", "https://rmm.example.com/install/t/linux.sh", time.Minute)
-	if err != nil || res.ExitCode != 1 || !strings.Contains(res.Log, "404") || !strings.Contains(f.args, "sudo -n") {
+	res, err = runInstall(ctx, f, "linux", GuestAuth{"deploy", "s3cret"}, "https://rmm.example.com/install/t/linux.sh", time.Minute)
+	if err != nil || res.ExitCode != 1 || !strings.Contains(res.Log, "404") || !strings.Contains(f.args, "sudo -S") {
 		t.Fatalf("non-root failure wrong: %+v %v args=%s", res, err, f.args)
+	}
+	if len(f.written) != 1 {
+		t.Fatalf("password file not written: %v", f.written)
+	}
+	for p, v := range f.written {
+		if !strings.HasPrefix(p, "/tmp/.apex-sudo-") || v != "s3cret\n" || !f.wasDeleted(p) || !strings.Contains(f.args, p) || strings.Contains(f.args, "s3cret") {
+			t.Fatalf("password file handling wrong: %s=%q deleted=%v args=%s", p, v, f.deleted, f.args)
+		}
+	}
+
+	f = &fakeGuest{exit: 1, log: "sudo: 1 incorrect password attempt"}
+	res, _ = runInstall(ctx, f, "linux", GuestAuth{"deploy", "wrong"}, "https://rmm.example.com/install/t/linux.sh", time.Minute)
+	if !strings.Contains(res.Log, "sudo didn't accept the password") {
+		t.Fatalf("no hint for a wrong sudo password: %q", res.Log)
 	}
 
 	f = &fakeGuest{waitErr: errors.New("timed out"), log: "half done"}
-	res, err = runInstall(ctx, f, "windows", "Administrator", "https://rmm.example.com/install/t/windows.ps1", time.Minute)
-	if err == nil || res == nil || res.Log != "half done" || f.deleted != `C:\Windows\Temp\apex-deploy.log` {
+	res, err = runInstall(ctx, f, "windows", GuestAuth{"Administrator", "pw"}, "https://rmm.example.com/install/t/windows.ps1", time.Minute)
+	if err == nil || res == nil || res.Log != "half done" || !f.wasDeleted(`C:\Windows\Temp\apex-deploy.log`) || len(f.written) != 0 {
 		t.Fatalf("wait error should still return the log: %+v %v", res, err)
 	}
 
-	if _, err := runInstall(ctx, &fakeGuest{}, "darwin", "u", "https://rmm.example.com/x", time.Minute); !errors.Is(err, ErrUnsupportedGuest) {
+	if _, err := runInstall(ctx, &fakeGuest{}, "darwin", GuestAuth{"u", "p"}, "https://rmm.example.com/x", time.Minute); !errors.Is(err, ErrUnsupportedGuest) {
 		t.Fatalf("darwin should be unsupported, got %v", err)
 	}
 }
