@@ -33,11 +33,13 @@ type Agent struct {
 	tmu  sync.Mutex
 	ptys map[string]ptyProc
 	mc   *metricsCollector
+	pm   *powerMonitor
+	now  chan struct{} // ask metricsLoop for a sample right away
 }
 
 // New creates an agent from config.
 func New(cfg *Config) *Agent {
-	return &Agent{cfg: cfg, ptys: map[string]ptyProc{}}
+	return &Agent{cfg: cfg, ptys: map[string]ptyProc{}, now: make(chan struct{}, 1)}
 }
 
 func httpClient() *http.Client {
@@ -54,6 +56,7 @@ func wsURL(server string) string {
 // Run connects to the server and reconnects forever until ctx is cancelled.
 func (a *Agent) Run(ctx context.Context) {
 	a.mc = newMetricsCollector()
+	a.pm = newPowerMonitor()
 	backoff := 2 * time.Second
 	go a.updateLoop(ctx)
 	desktop.PrefetchCodec() // H.264 encoder for remote control, downloaded from Cisco once
@@ -168,19 +171,29 @@ func (a *Agent) reply(id string, v any, err error) {
 	}
 }
 
+// metrics is one metrics sample, with the power reading.
+func (a *Agent) metrics() proto.Metrics {
+	m := a.mc.collect()
+	m.Energy = a.pm.collect(m.CPU)
+	return m
+}
+
 func (a *Agent) metricsLoop(ctx context.Context) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	inv := time.NewTicker(time.Hour)
 	defer inv.Stop()
 	time.Sleep(time.Second)
-	a.send(proto.TypeMetrics, "", a.mc.collect())
+	a.send(proto.TypeMetrics, "", a.metrics())
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			a.send(proto.TypeMetrics, "", a.mc.collect())
+			a.send(proto.TypeMetrics, "", a.metrics())
+		case <-a.now:
+			time.Sleep(2 * time.Second) // let a new power source answer first
+			a.send(proto.TypeMetrics, "", a.metrics())
 		case <-inv.C:
 			a.send(proto.TypeHello, "", proto.Hello{Inventory: CollectInventory()})
 		}
@@ -197,6 +210,15 @@ func (a *Agent) handle(env proto.Envelope) {
 	switch env.Type {
 	case proto.TypePing:
 		a.reply(env.ID, map[string]string{"version": proto.Version}, nil)
+	case proto.TypeEnergyConfig:
+		var c proto.EnergyConfig
+		if json.Unmarshal(env.Data, &c) == nil {
+			a.pm.setConfig(c)
+			select {
+			case a.now <- struct{}{}:
+			default:
+			}
+		}
 	case proto.TypeRunScript:
 		var rs proto.RunScript
 		if json.Unmarshal(env.Data, &rs) == nil {
@@ -261,7 +283,7 @@ func (a *Agent) handle(env proto.Envelope) {
 	case proto.TypeRefreshInventory:
 		inv := CollectInventory()
 		a.send(proto.TypeHello, "", proto.Hello{Inventory: inv})
-		a.send(proto.TypeMetrics, "", a.mc.collect())
+		a.send(proto.TypeMetrics, "", a.metrics())
 		time.Sleep(500 * time.Millisecond)
 		a.reply(env.ID, nil, nil)
 	case proto.TypeUpdateAgent:
