@@ -261,7 +261,8 @@ func (s *Server) agentBinary(goos, arch string) (*binInfo, error) {
 
 func validPlatform(goos, arch string) bool {
 	switch goos + "/" + arch {
-	case "windows/amd64", "windows/arm64", "linux/amd64", "linux/arm64", "linux/arm", "darwin/amd64", "darwin/arm64":
+	case "windows/amd64", "windows/arm64", "linux/amd64", "linux/arm64", "linux/arm", "darwin/amd64", "darwin/arm64",
+		"linux/amd64-static", "linux/arm64-static": // fully static builds for systems without glibc (Alpine)
 		return true
 	}
 	return false
@@ -301,12 +302,35 @@ case "$(uname -m)" in
   armv7l|armv6l) ARCH=arm ;;
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
-TMP="$(mktemp /tmp/apex-agent.XXXXXX)"
-echo "Downloading Apex RMM agent ($ARCH)..."
-if command -v curl >/dev/null 2>&1; then curl -fsSL "$SERVER/download/agent/linux/$ARCH" -o "$TMP"; else wget -qO "$TMP" "$SERVER/download/agent/linux/$ARCH"; fi
-chmod +x "$TMP"
+# The normal amd64/arm64 builds use the system's C library (glibc) to load the H.264 encoder;
+# systems without glibc (Alpine and other musl distributions) get the fully static build.
+case "$ARCH" in
+  amd64) LDSO=/lib64/ld-linux-x86-64.so.2 ;;
+  arm64) LDSO=/lib/ld-linux-aarch64.so.1 ;;
+  *) LDSO="" ;;
+esac
+BUILD="$ARCH"
+if [ -n "$LDSO" ] && [ ! -e "$LDSO" ]; then BUILD="$ARCH-static"; fi
+TMP="$(mktemp "${TMPDIR:-/tmp}/apex-agent.XXXXXX")"
+trap 'rm -f "$TMP"' EXIT
+fetch() {
+  if command -v curl >/dev/null 2>&1; then curl -fsSL "$SERVER/download/agent/linux/$1" -o "$TMP"; else wget -qO "$TMP" "$SERVER/download/agent/linux/$1"; fi
+  chmod +x "$TMP"
+}
+echo "Downloading Apex RMM agent ($BUILD)..."
+fetch "$BUILD"
+if ! "$TMP" version >/dev/null 2>&1; then
+  if [ "$BUILD" = "$ARCH" ] && [ -n "$LDSO" ]; then
+    echo "This build can't run here; downloading the static build instead..."
+    BUILD="$ARCH-static"
+    fetch "$BUILD"
+  fi
+  if ! "$TMP" version >/dev/null 2>&1; then
+    echo "The downloaded agent can't run on this system ($(uname -m)). If /tmp is mounted noexec, set TMPDIR to another folder and run again." >&2
+    exit 1
+  fi
+fi
 "$TMP" install --server "$SERVER" --token "$TOKEN"
-rm -f "$TMP"
 `)),
 	"macos.sh": template.Must(template.New("m").Parse(`#!/bin/sh
 # Apex RMM agent installer for macOS
