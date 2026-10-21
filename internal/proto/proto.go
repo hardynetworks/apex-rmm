@@ -98,6 +98,8 @@ type Inventory struct {
 	AgentVersion  string   `json:"agent_version"`
 	Virtual       string   `json:"virtual,omitempty"`
 	RustDeskID    string   `json:"rustdesk_id,omitempty"`
+	Chassis       string   `json:"chassis,omitempty"` // server, desktop, laptop, virtual (detected; empty if unknown)
+	GPUs          []string `json:"gpus,omitempty"`    // graphics adapter names
 }
 
 // Hello is sent right after the agent control socket connects.
@@ -119,6 +121,24 @@ type Metrics struct {
 	Procs   int      `json:"procs"`
 	Users   []string `json:"users"`
 	Energy  *Energy  `json:"energy,omitempty"`
+	GPUs    []GPU    `json:"gpus,omitempty"`
+}
+
+// GPU is one graphics adapter's state at the time of a metrics sample.
+// Values the adapter or driver doesn't report are -1 (or 0 for memory and clocks).
+type GPU struct {
+	Name     string  `json:"name"`
+	Vendor   string  `json:"vendor"`              // nvidia, amd, intel, apple, other
+	Load     float64 `json:"load"`                // % busy, -1 if unknown
+	MemUsed  uint64  `json:"mem_used,omitempty"`  // bytes of video memory in use
+	MemTotal uint64  `json:"mem_total,omitempty"` // bytes of dedicated video memory
+	Shared   bool    `json:"shared,omitempty"`    // integrated GPU using system memory (MemTotal is not dedicated)
+	TempC    float64 `json:"temp"`                // -1 if unknown
+	FanPct   float64 `json:"fan"`                 // -1 if unknown
+	ClockMHz float64 `json:"clock,omitempty"`     // graphics clock
+	MemClock float64 `json:"mem_clock,omitempty"` // memory clock
+	Watts    float64 `json:"w"`                   // board power, -1 if unknown
+	Source   string  `json:"src"`                 // nvidia-smi, sysfs, pdh, ioreg
 }
 
 // Energy is the device's power draw at the time of a metrics sample.
@@ -218,6 +238,8 @@ type Process struct {
 	CPU     float64 `json:"cpu"`
 	MemRSS  uint64  `json:"mem_rss"`
 	Cmdline string  `json:"cmdline"`
+	GPU     float64 `json:"gpu,omitempty"`     // % of a GPU's time (highest engine), where measurable
+	GPUMem  uint64  `json:"gpu_mem,omitempty"` // bytes of video memory
 }
 
 // Service is one OS service.
