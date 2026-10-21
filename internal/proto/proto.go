@@ -45,6 +45,7 @@ const (
 	TypeUninstall        = "uninstall"
 	TypeRustDesk         = "rustdesk_provision"
 	TypePing             = "ping"
+	TypeEnergyConfig     = "energy_config" // EnergyConfig: how this device's power draw is measured
 )
 
 // EnrollRequest is POSTed by a new agent to /api/agent/enroll.
@@ -117,6 +118,52 @@ type Metrics struct {
 	Load1   float64  `json:"load1"`
 	Procs   int      `json:"procs"`
 	Users   []string `json:"users"`
+	Energy  *Energy  `json:"energy,omitempty"`
+}
+
+// Energy is the device's power draw at the time of a metrics sample.
+type Energy struct {
+	Watts  float64     `json:"w"`               // whole-device figure used for kWh (see Kind)
+	Source string      `json:"src"`             // plug, ups, ipmi, meter, battery, telemetry, rapl, estimate
+	Kind   string      `json:"kind"`            // measured (whole device), partial (components only), estimate
+	Parts  []PowerPart `json:"parts,omitempty"` // components measured separately (CPU, RAM, GPU)
+	UPS    *UPSStatus  `json:"ups,omitempty"`   // a UPS this device can see (NUT or apcupsd)
+	Note   string      `json:"note,omitempty"`  // why the configured source isn't being used
+}
+
+// PowerPart is one measured component.
+type PowerPart struct {
+	Name   string  `json:"name"`
+	Watts  float64 `json:"w"`
+	Source string  `json:"src"`
+}
+
+// UPSStatus is read from a NUT or apcupsd server.
+type UPSStatus struct {
+	Name       string  `json:"name"`
+	Model      string  `json:"model,omitempty"`
+	Status     string  `json:"status"` // as reported, e.g. "OL", "OB LB", "ONLINE", "ONBATT"
+	OnBattery  bool    `json:"on_battery"`
+	Charge     float64 `json:"charge"`      // percent, -1 if unknown
+	RuntimeSec int     `json:"runtime"`     // seconds left on battery, -1 if unknown
+	LoadPct    float64 `json:"load"`        // percent of capacity, -1 if unknown
+	Watts      float64 `json:"w"`           // output power, 0 if unknown
+	NominalW   float64 `json:"nominal_w"`   // capacity in watts, 0 if unknown
+	Estimated  bool    `json:"w_estimated"` // Watts worked out from load % and VA rating
+}
+
+// EnergyConfig is sent by the server when the agent connects and when it changes.
+type EnergyConfig struct {
+	Mode      string  `json:"mode"`       // auto (default), plug, ups, estimate, off
+	PlugType  string  `json:"plug_type"`  // shelly, tasmota, kasa, json
+	PlugAddr  string  `json:"plug_addr"`  // IP/host (or URL for json)
+	PlugField string  `json:"plug_field"` // json: dotted path to the watts value
+	UPSAddr   string  `json:"ups_addr"`   // NUT/apcupsd host[:port]; default this computer
+	UPSName   string  `json:"ups_name"`   // NUT UPS name; default the first one
+	UPSShare  float64 `json:"ups_share"`  // ups mode: percent of the UPS load that is this device (default 100)
+	IdleW     float64 `json:"idle_w"`     // estimate: watts at idle (0 = guess)
+	MaxW      float64 `json:"max_w"`      // estimate: watts at full CPU load (0 = guess)
+	ExtraW    float64 `json:"extra_w"`    // added to partial readings and estimates (drives, fans, monitor…)
 }
 
 // RunScript asks the agent to execute a script.
