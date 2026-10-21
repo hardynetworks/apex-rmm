@@ -12,7 +12,7 @@ export function Alerts() {
   const tab = q.get('tab') || 'active';
   return (
     <div class="page">
-      <PageHeader title="Alerts" subtitle="Threshold monitoring across all devices." />
+      <PageHeader title="Alerts" subtitle="Threshold monitoring across all devices, plus vSphere host, datastore and alarm alerts." />
       <Tabs tabs={[{ id: 'active', label: 'Active', icon: 'bell' }, { id: 'resolved', label: 'Resolved', icon: 'check' }, { id: 'policies', label: 'Policies', icon: 'shield' }]}
         active={tab} onChange={(t) => navigate('/alerts?tab=' + t, true)} />
       {tab === 'policies' ? <Policies /> : <AlertList status={tab === 'resolved' ? 'resolved' : ''} />}
@@ -39,7 +39,9 @@ function AlertList({ status }: { status: string }) {
               <tr key={a.id}>
                 <td><Severity s={a.severity} /></td>
                 <td><span class="strong">{a.title}</span><div class="muted small">{a.message}</div></td>
-                <td class="hide-sm"><Link href={'/devices/' + a.device_id} class="strong">{a.device_name}</Link><div><OsBadge os={a.os} /> <span class="muted small">{a.client_name}</span></div></td>
+                <td class="hide-sm">{a.device_id
+                  ? <><Link href={'/devices/' + a.device_id} class="strong">{a.device_name}</Link><div><OsBadge os={a.os} /> <span class="muted small">{a.client_name}</span></div></>
+                  : <><Link href="/virtualization" class="strong">{a.device_name}</Link><div class="muted small">{(a.source_key || '').startsWith('vsphere:') ? 'vSphere' : ''}</div></>}</td>
                 <td><StatusBadge s={a.status} />{a.acknowledged_by && <div class="muted small">by {a.acknowledged_by}</div>}</td>
                 <td class="nowrap muted">{timeAgo(a.created_at)}{a.resolved_at && <div class="small">resolved {timeAgo(a.resolved_at)}</div>}</td>
                 <td class="right nowrap">

@@ -45,7 +45,7 @@ export function Dashboard() {
                 <li key={a.id}>
                   <Severity s={a.severity} />
                   <div class="grow">
-                    <Link href={'/devices/' + a.device_id} class="strong">{a.title}</Link>
+                    <Link href={a.device_id ? '/devices/' + a.device_id : '/virtualization'} class="strong">{a.title}</Link>
                     <div class="muted small">{a.device_name} · {timeAgo(a.created_at)}</div>
                   </div>
                   <StatusBadge s={a.status} />
