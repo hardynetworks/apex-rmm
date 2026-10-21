@@ -523,3 +523,14 @@ details[open] summary { margin-bottom: 8px; }
 .rd { position: relative; }
 .rd-toasts { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 9; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; max-width: calc(100vw - 32px); }
 .rd-toast { background: rgba(15, 23, 42, .94); color: #e2e8f0; border: 1px solid #334155; border-radius: 10px; padding: 9px 14px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.4); max-width: 560px; word-break: break-word; }
+
+/* power monitoring */
+.power-now { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--warning); }
+.power-big { font-size: 34px; font-weight: 650; letter-spacing: -0.02em; color: var(--text); }
+.energy-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.energy-totals > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--surface-2, var(--surface-3)); border-radius: 10px; min-width: 0; }
+.energy-totals strong { font-size: 20px; font-weight: 650; }
+.ups-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.ups-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; color: var(--text); text-decoration: none; }
+.ups-chip.ups-batt { border-color: var(--critical); background: var(--critical-soft); }
+.fleet-power { align-items: start; }
