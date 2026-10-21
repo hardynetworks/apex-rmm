@@ -16,7 +16,7 @@ has two parts, both under **Virtualization** in the dashboard:
 | Network | The Apex server container must reach `https://<vcenter>:443`. |
 | vCenter account | A dedicated account (e.g. `svc-apex@vsphere.local`). See privileges below. |
 | Public URL | For agent deployment, set **Settings → Public URL** to an address the *VMs* can reach (not `localhost`). |
-| Guests (deploy only) | VMware Tools running; a guest admin login (Windows) or root / passwordless-sudo user (Linux); guest can reach the Public URL. |
+| Guests (deploy only) | VMware Tools running; a guest admin login (Windows) or root or a user that can use sudo (Linux); guest can reach the Public URL. |
 
 ### vCenter privileges
 
@@ -85,11 +85,14 @@ console. An in-browser console inside Apex is **not** implemented.
 
 How it works: Apex creates a short-lived (2 h) enrollment token limited to the number of VMs,
 then uses guest operations to run the normal Apex install script in each guest
-(PowerShell on Windows, `sh` on Linux; `sudo -n` if the Linux user is not root). The token is
+(PowerShell on Windows, `sh` on Linux; through `sudo` if the Linux user is not root — the account's password is handed to sudo in a private file that is deleted before the installer starts, never on the command line). The token is
 revoked when the batch ends.
 
 Guest credentials are used in memory only. They are never written to the database, the audit
 log or the installer logs.
+For a Linux account other than root, the password is put in a file in the guest's `/tmp` for a
+moment (readable only by that account) so sudo can read it; the install command opens and deletes
+it before anything else runs, and Apex deletes it again afterwards in case the command never started.
 
 VMs are skipped (with a reason) when they are templates, powered off, have Tools not running,
 run an unsupported OS, or already have an agent (tick *Reinstall* to override). Linked agents
