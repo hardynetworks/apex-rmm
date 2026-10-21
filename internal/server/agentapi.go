@@ -152,8 +152,17 @@ func (s *Server) recordMetrics(ctx context.Context, id string, m *proto.Metrics)
 	if err != nil {
 		slog.Error("update metrics", "device", id, "err", err)
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO device_metrics (device_id, cpu, mem, disk, net_rx, net_tx) VALUES ($1,$2,$3,$4,$5,$6)`,
-		id, m.CPU, m.Mem, m.Disk, int64(m.NetRx), int64(m.NetTx))
+	var watts *float64
+	var onBatt *bool
+	if m.Energy != nil {
+		watts = &m.Energy.Watts
+		if m.Energy.UPS != nil {
+			onBatt = &m.Energy.UPS.OnBattery
+		}
+	}
+	_, _ = s.db.Exec(ctx, `INSERT INTO device_metrics (device_id, cpu, mem, disk, net_rx, net_tx, power_w, on_batt) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		id, m.CPU, m.Mem, m.Disk, int64(m.NetRx), int64(m.NetTx), watts, onBatt)
+	s.recordEnergy(ctx, id, m.Energy)
 }
 
 func mustJSON(v any) string {

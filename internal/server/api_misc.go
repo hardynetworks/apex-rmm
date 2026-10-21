@@ -263,9 +263,12 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 // ---- settings ----
 
 type Settings struct {
-	WebhookURL      string `json:"webhook_url"`
-	WebhookFormat   string `json:"webhook_format"` // generic | discord | slack | ntfy
-	AlertTicketUser string `json:"alert_ticket_assignee"`
+	WebhookURL      string  `json:"webhook_url"`
+	WebhookFormat   string  `json:"webhook_format"` // generic | discord | slack | ntfy
+	AlertTicketUser string  `json:"alert_ticket_assignee"`
+	EnergyRate      float64 `json:"energy_rate"` // electricity price per kWh (0 = not set)
+	Currency        string  `json:"currency"`    // symbol shown with costs, default "$"
+	EnergyTZ        string  `json:"energy_tz"`   // IANA time zone that daily kWh totals follow
 }
 
 func (s *Server) settings(r *http.Request) Settings {
@@ -301,6 +304,21 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &st); err != nil {
 		fail(w, err)
 		return
+	}
+	if st.EnergyRate < 0 || st.EnergyRate > 100 {
+		fail(w, badRequest("the electricity rate must be between 0 and 100 per kWh"))
+		return
+	}
+	st.Currency = strings.TrimSpace(st.Currency)
+	if len([]rune(st.Currency)) > 4 {
+		fail(w, badRequest("use a short currency symbol, like $ or €"))
+		return
+	}
+	if st.EnergyTZ = strings.TrimSpace(st.EnergyTZ); st.EnergyTZ != "" {
+		if _, err := time.LoadLocation(st.EnergyTZ); err != nil {
+			fail(w, badRequest("unknown time zone "+st.EnergyTZ))
+			return
+		}
 	}
 	if err := s.db.SetSetting(r.Context(), "general", st); err != nil {
 		fail(w, err)

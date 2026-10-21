@@ -17,6 +17,8 @@ import (
 const deviceCols = `d.id, d.client_id, d.site_id, c.name AS client_name, st.name AS site_name, d.hostname, d.display_name,
 	d.os, d.platform, d.os_version, d.kernel_version, d.arch, d.cpu_model, d.cpu_cores, d.ram_total, d.manufacturer, d.model, d.serial,
 	d.agent_version, d.public_ip, d.local_ips, d.logged_in_users, d.online, d.last_seen, d.boot_time, d.cpu_pct, d.mem_pct, d.disk_pct,
+	CASE WHEN d.online AND d.power_at > now() - interval '5 minutes' THEN d.power_w END AS power_w, d.power_kind, d.power_src, d.power_at,
+	d.ups_on_battery, d.power_info, d.energy_conf,
 	d.rustdesk_id, (d.rustdesk_password <> '') AS rustdesk_ready, d.notes, d.tags, d.maintenance_until, d.created_at,
 	(SELECT count(*) FROM alerts a WHERE a.device_id=d.id AND a.status<>'resolved') AS open_alerts`
 
@@ -67,13 +69,14 @@ func (s *Server) getDevice(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		DisplayName      *string    `json:"display_name"`
-		Notes            *string    `json:"notes"`
-		Tags             []string   `json:"tags"`
-		ClientID         *string    `json:"client_id"`
-		SiteID           *string    `json:"site_id"`
-		MaintenanceUntil *time.Time `json:"maintenance_until"`
-		ClearMaintenance bool       `json:"clear_maintenance"`
+		DisplayName      *string             `json:"display_name"`
+		Notes            *string             `json:"notes"`
+		Tags             []string            `json:"tags"`
+		ClientID         *string             `json:"client_id"`
+		SiteID           *string             `json:"site_id"`
+		MaintenanceUntil *time.Time          `json:"maintenance_until"`
+		ClearMaintenance bool                `json:"clear_maintenance"`
+		EnergyConf       *proto.EnergyConfig `json:"energy_conf"`
 	}
 	if err := decode(r, &in); err != nil {
 		fail(w, err)
@@ -105,6 +108,17 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.MaintenanceUntil != nil {
 		_, _ = s.db.Exec(ctx, `UPDATE devices SET maintenance_until=$2 WHERE id=$1`, id, *in.MaintenanceUntil)
+	}
+	if in.EnergyConf != nil {
+		if err := cleanEnergyConf(in.EnergyConf); err != nil {
+			fail(w, badRequest(err.Error()))
+			return
+		}
+		if _, err := s.db.Exec(ctx, `UPDATE devices SET energy_conf=$2 WHERE id=$1`, id, mustJSONObj(in.EnergyConf)); err != nil {
+			fail(w, err)
+			return
+		}
+		go s.pushEnergyConfig(id)
 	}
 	if in.ClearMaintenance {
 		_, _ = s.db.Exec(ctx, `UPDATE devices SET maintenance_until=NULL WHERE id=$1`, id)
@@ -139,7 +153,7 @@ func (s *Server) deviceMetrics(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Maps(r.Context(), `
 		SELECT to_timestamp(floor(extract(epoch FROM ts)/$3)*$3) AS ts,
 		       round(avg(cpu)::numeric,1)::float8 AS cpu, round(avg(mem)::numeric,1)::float8 AS mem, round(avg(disk)::numeric,1)::float8 AS disk,
-		       avg(net_rx)::float8 AS net_rx, avg(net_tx)::float8 AS net_tx
+		       avg(net_rx)::float8 AS net_rx, avg(net_tx)::float8 AS net_tx, round(avg(power_w)::numeric,1)::float8 AS power_w
 		FROM device_metrics WHERE device_id=$1 AND ts > now() - make_interval(hours => $2)
 		GROUP BY 1 ORDER BY 1`, chi.URLParam(r, "id"), hours, bucket)
 	if err != nil {

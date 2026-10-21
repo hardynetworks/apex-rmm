@@ -143,6 +143,7 @@ func (h *Hub) serveAgent(deviceID, ip string, ws *websocket.Conn) {
 
 	go a.writeLoop()
 	go h.s.dispatchPending(deviceID)
+	go h.s.pushEnergyConfig(deviceID)
 	a.readLoop()
 
 	a.close()

@@ -121,6 +121,8 @@ func (s *Server) routes() http.Handler {
 			r.Get("/devices/{id}/metrics", s.deviceMetrics)
 			r.Get("/devices/{id}/jobs", s.deviceJobs)
 			r.Get("/devices/{id}/alerts", s.deviceAlerts)
+			r.Get("/devices/{id}/energy", s.deviceEnergy)
+			r.Get("/energy", s.fleetEnergy)
 			r.Get("/scripts", s.listScripts)
 			r.Get("/scripts/{id}", s.getScript)
 			r.Get("/jobs", s.listJobs)
@@ -263,6 +265,7 @@ func (s *Server) cleanupLoop(ctx context.Context) {
 	defer t.Stop()
 	for {
 		_, _ = s.db.Exec(ctx, `DELETE FROM device_metrics WHERE ts < now() - make_interval(days => $1)`, s.conf().MetricsRetentionDays)
+		_, _ = s.db.Exec(ctx, `DELETE FROM device_energy_daily WHERE day < now() - interval '3 years'`)
 		_, _ = s.db.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
 		_, _ = s.db.Exec(ctx, `UPDATE job_results SET status='timeout', finished_at=now() WHERE status='running' AND started_at < now() - interval '6 hours'`)
 		_, _ = s.db.Exec(ctx, `DELETE FROM audit_log WHERE created_at < now() - interval '365 days'`)

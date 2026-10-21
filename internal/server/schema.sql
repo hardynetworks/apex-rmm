@@ -252,3 +252,23 @@ CREATE TABLE IF NOT EXISTS settings (
     key   text PRIMARY KEY,
     value jsonb NOT NULL
 );
+
+-- Power monitoring (added with agent power readings)
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS power_w real;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS power_kind text NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS power_src text NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS power_at timestamptz;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS power_info jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS ups_on_battery boolean NOT NULL DEFAULT false;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS energy_conf jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE device_metrics ADD COLUMN IF NOT EXISTS power_w real;
+ALTER TABLE device_metrics ADD COLUMN IF NOT EXISTS on_batt boolean;
+
+CREATE TABLE IF NOT EXISTS device_energy_daily (
+    device_id text NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    day       date NOT NULL,
+    wh        double precision NOT NULL DEFAULT 0,
+    est_wh    double precision NOT NULL DEFAULT 0, -- part of wh that came from estimates / partial readings
+    PRIMARY KEY (device_id, day)
+);
+CREATE INDEX IF NOT EXISTS device_energy_daily_day ON device_energy_daily (day);

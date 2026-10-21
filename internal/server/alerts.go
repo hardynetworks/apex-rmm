@@ -44,9 +44,9 @@ func (s *Server) savePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch in.Metric {
-	case "cpu", "mem", "disk", "offline":
+	case "cpu", "mem", "disk", "offline", "power", "ups_battery":
 	default:
-		fail(w, badRequest("metric must be cpu, mem, disk or offline"))
+		fail(w, badRequest("metric must be cpu, mem, disk, power, ups_battery or offline"))
 		return
 	}
 	if in.Operator != "<" {
@@ -223,12 +223,32 @@ func (s *Server) evaluateAlerts(ctx context.Context) {
 			for _, r := range rows {
 				hits = append(hits, hit{r["id"].(string), r["name"].(string), toF(r["mins"]), r["firing"] == true})
 			}
+		} else if metric == "ups_battery" {
+			// firing when every sample in the window says the UPS is on battery
+			rows, err := s.db.Maps(ctx, `SELECT d.id, coalesce(nullif(d.display_name,''), d.hostname) AS name,
+				bool_and(m.on_batt) AS all_batt, count(m.on_batt) AS n,
+				coalesce((d.power_info->'ups'->>'charge')::float8, -1) AS charge
+				FROM devices d JOIN device_metrics m ON m.device_id=d.id AND m.ts > now() - make_interval(mins => $1)
+				WHERE d.online AND ($2::text IS NULL OR d.client_id=$2) AND (d.maintenance_until IS NULL OR d.maintenance_until < now())
+				GROUP BY d.id`, dur, clientID)
+			if err != nil {
+				slog.Error("alert eval", "err", err)
+				continue
+			}
+			for _, r := range rows {
+				n, _ := r["n"].(int64)
+				hits = append(hits, hit{r["id"].(string), r["name"].(string), toF(r["charge"]), n >= 2 && r["all_batt"] == true})
+			}
 		} else {
+			col := metric
+			if metric == "power" {
+				col = "power_w"
+			}
 			cmp := ">"
 			if op == "<" {
 				cmp = "<"
 			}
-			rows, err := s.db.Maps(ctx, `SELECT d.id, coalesce(nullif(d.display_name,''), d.hostname) AS name, avg(m.`+metric+`)::float8 AS value, count(m.*) AS n
+			rows, err := s.db.Maps(ctx, `SELECT d.id, coalesce(nullif(d.display_name,''), d.hostname) AS name, avg(m.`+col+`)::float8 AS value, count(m.`+col+`) AS n
 				FROM devices d JOIN device_metrics m ON m.device_id=d.id AND m.ts > now() - make_interval(mins => $1)
 				WHERE d.online AND ($2::text IS NULL OR d.client_id=$2) AND (d.maintenance_until IS NULL OR d.maintenance_until < now())
 				GROUP BY d.id`, dur, clientID)
@@ -271,7 +291,8 @@ func toF(v any) float64 {
 	return f
 }
 
-var metricNames = map[string]string{"cpu": "CPU usage", "mem": "Memory usage", "disk": "Disk usage", "offline": "Device offline"}
+var metricNames = map[string]string{"cpu": "CPU usage", "mem": "Memory usage", "disk": "Disk usage", "offline": "Device offline",
+	"power": "Power draw", "ups_battery": "UPS on battery"}
 
 func (s *Server) raiseAlert(ctx context.Context, p map[string]any, deviceID, deviceName string, value float64) {
 	metric := p["metric"].(string)
@@ -280,6 +301,17 @@ func (s *Server) raiseAlert(ctx context.Context, p map[string]any, deviceID, dev
 	if metric == "offline" {
 		title = fmt.Sprintf("%s is offline", deviceName)
 		msg = fmt.Sprintf("%s has not checked in for %.0f minutes (policy: %s).", deviceName, value, p["name"])
+	} else if metric == "ups_battery" {
+		title = fmt.Sprintf("%s: UPS on battery", deviceName)
+		msg = fmt.Sprintf("The UPS powering %s has been running on battery for %d minutes (policy: %s).", deviceName, p["duration_minutes"], p["name"])
+		if value >= 0 {
+			title = fmt.Sprintf("%s: UPS on battery (%.0f%% charge)", deviceName, value)
+			msg = fmt.Sprintf("The UPS powering %s has been running on battery for %d minutes; the battery is at %.0f%% (policy: %s).", deviceName, p["duration_minutes"], value, p["name"])
+		}
+	} else if metric == "power" {
+		title = fmt.Sprintf("%s: %s %.0f W", deviceName, metricNames[metric], value)
+		msg = fmt.Sprintf("%s on %s averaged %.0f W over %d minutes (threshold %s %.0f W, policy: %s).",
+			metricNames[metric], deviceName, value, p["duration_minutes"], p["operator"], toF(p["threshold"]), p["name"])
 	} else {
 		title = fmt.Sprintf("%s: %s %.0f%%", deviceName, metricNames[metric], value)
 		msg = fmt.Sprintf("%s on %s averaged %.1f%% over %d minutes (threshold %s %.0f%%, policy: %s).",
