@@ -38,9 +38,9 @@ export function Dashboard() {
 
       <div class="grid-2">
         <FleetPowerCard />
-        <Card title="Active alerts" actions={<Link href="/alerts" class="link">View all</Link>} pad={false}>
+        <Card title="Active alerts" icon="bell" actions={<Link href="/alerts" class="link">View all</Link>} pad={false}>
           {data.recent_alerts.length === 0 ? <Empty icon="check" title="All clear">No open alerts.</Empty> : (
-            <ul class="list">
+            <ul class="list tiles">
               {data.recent_alerts.map((a: any) => (
                 <li key={a.id}>
                   <Severity s={a.severity} />
@@ -54,9 +54,9 @@ export function Dashboard() {
             </ul>
           )}
         </Card>
-        <Card title="Ticket queue" actions={<Link href="/tickets" class="link">View all</Link>} pad={false}>
+        <Card title="Ticket queue" icon="ticket" actions={<Link href="/tickets" class="link">View all</Link>} pad={false}>
           {data.recent_tickets.length === 0 ? <Empty icon="ticket" title="No open tickets" /> : (
-            <ul class="list">
+            <ul class="list tiles">
               {data.recent_tickets.map((t: any) => (
                 <li key={t.id}>
                   <Priority p={t.priority} />
@@ -70,7 +70,7 @@ export function Dashboard() {
             </ul>
           )}
         </Card>
-        <Card title="Busiest devices" pad={false}>
+        <Card title="Busiest devices" icon="cpu" pad={false}>
           {data.top_cpu.length === 0 ? <Empty icon="devices" title="No devices online">Deploy an agent from the Clients page.</Empty> : (
             <table class="table compact">
               <thead><tr><th>Device</th><th>CPU</th><th>Memory</th><th>Disk</th></tr></thead>
@@ -87,9 +87,9 @@ export function Dashboard() {
             </table>
           )}
         </Card>
-        <Card title="Clients" actions={<Link href="/clients" class="link">Manage</Link>} pad={false}>
+        <Card title="Clients" icon="building" actions={<Link href="/clients" class="link">Manage</Link>} pad={false}>
           {data.by_client.length === 0 ? <Empty icon="building" title="No clients" /> : (
-            <ul class="list">
+            <ul class="list tiles">
               {data.by_client.map((c: any) => (
                 <li key={c.id}>
                   <div class="avatar sm">{c.name.slice(0, 1).toUpperCase()}</div>

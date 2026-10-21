@@ -111,7 +111,7 @@ function Overview({ d }: { d: any }) {
   const inv = d.inventory || {};
   return (
     <div class="grid-3">
-      <Card title="Health">
+      <Card title="Health" icon="activity">
         <div class="health">
           <div><span class="muted"><Icon name="cpu" size={15} /> CPU</span><Meter value={d.online ? d.cpu_pct : 0} /></div>
           <div><span class="muted"><Icon name="memory" size={15} /> Memory</span><Meter value={d.online ? d.mem_pct : 0} /></div>
@@ -125,7 +125,7 @@ function Overview({ d }: { d: any }) {
           ['Agent version', d.agent_version],
         ]} />
       </Card>
-      <Card title="System">
+      <Card title="System" icon="info">
         <Kv items={[
           ['Hostname', d.hostname],
           ['Operating system', `${d.platform} ${d.os_version}`],
@@ -137,7 +137,7 @@ function Overview({ d }: { d: any }) {
           ['Virtualization', inv.virtual || 'Physical / unknown'],
         ]} />
       </Card>
-      <Card title="Hardware">
+      <Card title="Hardware" icon="cpu">
         <Kv items={[
           ['Processor', d.cpu_model],
           ['Cores / threads', `${inv.cpu_cores || '?'} / ${inv.cpu_threads || d.cpu_cores}`],
@@ -145,7 +145,7 @@ function Overview({ d }: { d: any }) {
           ['Enrolled', fmtDate(d.created_at)],
         ]} />
       </Card>
-      <Card title="Storage" pad={false}>
+      <Card title="Storage" icon="disk" pad={false}>
         <table class="table compact">
           <thead><tr><th>Volume</th><th>Size</th><th>Used</th></tr></thead>
           <tbody>
@@ -155,7 +155,7 @@ function Overview({ d }: { d: any }) {
           </tbody>
         </table>
       </Card>
-      <Card title="Network" pad={false} class="span-2">
+      <Card title="Network" icon="network" pad={false} class="span-2">
         <table class="table compact">
           <thead><tr><th>Interface</th><th>MAC</th><th>Addresses</th></tr></thead>
           <tbody>
@@ -166,7 +166,7 @@ function Overview({ d }: { d: any }) {
           </tbody>
         </table>
       </Card>
-      {d.notes && <Card title="Notes" class="span-3"><p class="prewrap">{d.notes}</p></Card>}
+      {d.notes && <Card title="Notes" icon="file" class="span-3"><p class="prewrap">{d.notes}</p></Card>}
     </div>
   );
 }
@@ -187,10 +187,10 @@ function Performance({ id }: { id: string }) {
       </div>
       {loading && !data ? <Spinner /> : (
         <div class="grid-2">
-          <Card title="CPU usage"><LineChart data={data || []} series={[{ key: 'cpu', label: 'CPU', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>
-          <Card title="Memory usage"><LineChart data={data || []} series={[{ key: 'mem', label: 'Memory', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>
-          <Card title="Disk usage (fullest volume)"><LineChart data={data || []} series={[{ key: 'disk', label: 'Disk', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>
-          <Card title="Network throughput"><LineChart data={data || []} series={[{ key: 'net_rx', label: 'Received', color: SERIES_BLUE }, { key: 'net_tx', label: 'Sent', color: SERIES_ORANGE }]} format={rate} /></Card>
+          <Card title="CPU usage" icon="cpu"><LineChart data={data || []} series={[{ key: 'cpu', label: 'CPU', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>
+          <Card title="Memory usage" icon="memory"><LineChart data={data || []} series={[{ key: 'mem', label: 'Memory', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>
+          <Card title="Disk usage (fullest volume)" icon="disk"><LineChart data={data || []} series={[{ key: 'disk', label: 'Disk', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>
+          <Card title="Network throughput" icon="network"><LineChart data={data || []} series={[{ key: 'net_rx', label: 'Received', color: SERIES_BLUE }, { key: 'net_tx', label: 'Sent', color: SERIES_ORANGE }]} format={rate} /></Card>
         </div>
       )}
     </>

@@ -80,7 +80,7 @@ export function DevicePower({ d, tech, onSaved }: { d: any; tech: boolean; onSav
   const hasPower = d.power_kind !== '' && d.power_kind != null;
   return (
     <div class="grid-2">
-      <Card title="Power now">
+      <Card title="Power now" icon="bolt">
         {!d.online ? <Empty icon="bolt" title="Device is offline" /> : !hasPower ? (
           <Empty icon="bolt" title="No power readings yet">{d.energy_conf?.mode === 'off' ? 'Power monitoring is turned off for this device.' : 'Update the agent to start power monitoring (⋯ → Update agent).'}</Empty>
         ) : (
@@ -104,7 +104,7 @@ export function DevicePower({ d, tech, onSaved }: { d: any; tech: boolean; onSav
           </>
         )}
       </Card>
-      <Card title="Energy use" actions={
+      <Card title="Energy use" icon="activity" actions={
         <div class="seg">{[[7, '7d'], [30, '30d'], [90, '90d']].map(([n, l]) => <button key={n} class={days === n ? 'active' : ''} onClick={() => setDays(n as number)}>{l}</button>)}</div>
       }>
         {!e ? <Spinner /> : (
@@ -120,12 +120,12 @@ export function DevicePower({ d, tech, onSaved }: { d: any; tech: boolean; onSav
           </>
         )}
       </Card>
-      <Card title="Power draw" class="span-2" actions={
+      <Card title="Power draw" icon="gauge" class="span-2" actions={
         <div class="seg">{[[6, '6h'], [24, '24h'], [168, '7d'], [336, '14d']].map(([h, l]) => <button key={h} class={hours === h ? 'active' : ''} onClick={() => setHours(h as number)}>{l}</button>)}</div>
       }>
         <LineChart data={(metrics.data || []).filter((m) => m.power_w != null)} series={[{ key: 'power_w', label: 'Power', color: 'var(--series-2)' }]} format={(v) => Math.round(v) + ' W'} empty="No power readings in this period" />
       </Card>
-      {info.ups && <Card title="UPS"><UPSKv u={info.ups} /></Card>}
+      {info.ups && <Card title="UPS" icon="battery"><UPSKv u={info.ups} /></Card>}
       {tech && <PowerSettings d={d} onSaved={onSaved} />}
     </div>
   );
@@ -159,7 +159,7 @@ function PowerSettings({ d, onSaved }: { d: any; onSaved: (d: any) => void }) {
   };
   const mode = MODES.find((m) => m[0] === c.mode) || MODES[0];
   return (
-    <Card title="Power settings" class="span-2">
+    <Card title="Power settings" icon="settings" class="span-2">
       <div class="form-grid">
         <Field label="Measure with" hint={mode[2]}>
           <select value={c.mode} onChange={(e) => set('mode', (e.target as HTMLSelectElement).value)}>{MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
@@ -196,7 +196,7 @@ export function FleetPowerCard() {
   const cost = (k: number) => fmtCost(k, e.rate, e.currency);
   const n = e.now;
   return (
-    <Card title={<span class="title-row"><Icon name="bolt" size={17} /> Power</span>} class="span-2">
+    <Card title="Power" icon="bolt" class="span-2">
       {n.devices === 0 && e.top.length === 0 ? (
         <Empty icon="bolt" title="No power readings yet">Agents report power after they're updated (device ⋯ → Update agent).</Empty>
       ) : (
