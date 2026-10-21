@@ -464,7 +464,7 @@ function DeployModal({ conn, vms, onClose, onStarted }: { conn: any; vms: any[];
       {nLin > 0 && (
         <Card title={`Linux account (${nLin} VM${nLin > 1 ? 's' : ''})`}>
           <div class="row-fields">
-            <Field label="Username" hint="root, or a user with passwordless sudo"><input value={lin.username} onInput={(e) => setLin({ ...lin, username: (e.target as HTMLInputElement).value })} autoComplete="off" /></Field>
+            <Field label="Username" hint="root, or a user that can use sudo (its password is also given to sudo)"><input value={lin.username} onInput={(e) => setLin({ ...lin, username: (e.target as HTMLInputElement).value })} autoComplete="off" /></Field>
             <Field label="Password"><input type="password" value={lin.password} autoComplete="new-password" onInput={(e) => setLin({ ...lin, password: (e.target as HTMLInputElement).value })} /></Field>
           </div>
         </Card>
