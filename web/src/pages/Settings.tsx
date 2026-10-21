@@ -28,6 +28,7 @@ function General() {
       <SystemSettings />
       <div class="grid-2">
         <Notifications />
+        <EnergySettings />
         <Account />
       </div>
     </div>
@@ -147,8 +148,10 @@ function Notifications() {
   const [s, setS] = useState<any>(null);
   useEffect(() => { if (data) setS(data.settings); }, [data]);
   if (!data || !s) return <Spinner />;
-  const save = () => attempt(() => api.put('/settings', s), 'Settings saved');
-  const test = () => attempt(async () => { await api.put('/settings', s); await api.post('/settings/test-webhook'); }, 'Test notification sent');
+  // merge into the latest saved settings so other cards' changes aren't overwritten
+  const put = async () => { const cur = (await api.get('/settings')).settings; await api.put('/settings', { ...cur, webhook_url: s.webhook_url, webhook_format: s.webhook_format }); };
+  const save = () => attempt(put, 'Settings saved');
+  const test = () => attempt(async () => { await put(); await api.post('/settings/test-webhook'); }, 'Test notification sent');
   return (
     <Card title="Alert notifications">
       <Field label="Webhook URL" hint="Discord, Slack, ntfy or any endpoint accepting JSON."><input value={s.webhook_url} placeholder="https://…" onInput={(e) => setS({ ...s, webhook_url: (e.target as HTMLInputElement).value })} /></Field>
@@ -158,6 +161,27 @@ function Notifications() {
         </select>
       </Field>
       <div class="form-actions"><Button onClick={test} disabled={!s.webhook_url}>Send test</Button><Button variant="primary" onClick={save}>Save</Button></div>
+    </Card>
+  );
+}
+
+function EnergySettings() {
+  const { data } = useFetch<any>('/settings');
+  const [s, setS] = useState<any>(null);
+  const browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  useEffect(() => { if (data) setS({ energy_rate: data.settings.energy_rate || '', currency: data.settings.currency || '$', energy_tz: data.settings.energy_tz || browserTZ }); }, [data]);
+  if (!data || !s) return <Spinner />;
+  const save = () => attempt(async () => {
+    const cur = (await api.get('/settings')).settings;
+    await api.put('/settings', { ...cur, energy_rate: parseFloat(s.energy_rate) || 0, currency: s.currency, energy_tz: s.energy_tz });
+  }, 'Settings saved');
+  const set = (k: string) => (e: Event) => setS({ ...s, [k]: (e.target as HTMLInputElement).value });
+  return (
+    <Card title="Power & energy">
+      <Field label="Electricity rate (per kWh)" hint="From your power bill, e.g. 0.13 for 13¢/kWh. Used for cost figures."><input type="number" step="0.0001" min="0" value={s.energy_rate} placeholder="0.13" onInput={set('energy_rate')} /></Field>
+      <Field label="Currency symbol"><input value={s.currency} maxLength={4} onInput={set('currency')} /></Field>
+      <Field label="Time zone for daily totals" hint={`Days start at midnight here. Your browser: ${browserTZ}`}><input value={s.energy_tz} placeholder="America/Chicago" onInput={set('energy_tz')} /></Field>
+      <div class="form-actions"><Button variant="primary" onClick={save}>Save</Button></div>
     </Card>
   );
 }

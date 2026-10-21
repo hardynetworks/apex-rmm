@@ -2,6 +2,7 @@ import { useMemo, useState } from 'preact/hooks';
 import { Icon } from '../icons';
 import { Link, navigate, useQuery } from '../router';
 import { Badge, Button, Card, Empty, ErrorBox, Meter, OsBadge, PageHeader, SearchInput, Spinner, StatusDot, deviceName, timeAgo, useFetch } from '../ui';
+import { fmtW } from './Power';
 import { useCan } from '../user';
 import { RunScriptModal } from './Scripts';
 import { DeployModal } from './Clients';
@@ -92,6 +93,7 @@ export function Devices() {
                   <th class="hide-sm">CPU</th>
                   <th class="hide-sm">Memory</th>
                   <th class="hide-sm">Disk</th>
+                  <th class="hide-md">Power</th>
                   <th class="hide-md">User</th>
                   <th>Last seen</th>
                 </tr>
@@ -118,6 +120,7 @@ export function Devices() {
                     <td class="hide-sm">{d.online ? <Meter value={d.cpu_pct} /> : <span class="muted">—</span>}</td>
                     <td class="hide-sm">{d.online ? <Meter value={d.mem_pct} /> : <span class="muted">—</span>}</td>
                     <td class="hide-sm"><Meter value={d.disk_pct} /></td>
+                    <td class="hide-md nowrap" title={d.power_kind === 'estimate' ? 'Estimate' : d.power_kind === 'partial' ? 'CPU/RAM/GPU only' : ''}>{d.power_w != null ? <>{fmtW(d.power_w)}{d.power_kind !== 'measured' && <span class="muted small"> {d.power_kind === 'partial' ? '*' : '~'}</span>}</> : <span class="muted">—</span>}</td>
                     <td class="hide-md truncate">{d.logged_in_users?.join(', ') || <span class="muted">—</span>}</td>
                     <td class="nowrap">{d.online ? <span class="text-good">Now</span> : timeAgo(d.last_seen)}</td>
                   </tr>

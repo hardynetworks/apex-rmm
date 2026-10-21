@@ -4,7 +4,8 @@ import { Link, navigate, useQuery } from '../router';
 import { Badge, Button, Card, Empty, Field, Modal, OsBadge, PageHeader, Severity, Spinner, StatusBadge, Tabs, attempt, confirmDialog, timeAgo, useFetch } from '../ui';
 import { useCan } from '../user';
 
-const metricLabel: Record<string, string> = { cpu: 'CPU usage', mem: 'Memory usage', disk: 'Disk usage', offline: 'Device offline' };
+const metricLabel: Record<string, string> = { cpu: 'CPU usage', mem: 'Memory usage', disk: 'Disk usage', power: 'Power draw', ups_battery: 'UPS on battery', offline: 'Device offline' };
+const unit = (m: string) => (m === 'power' ? ' W' : '%');
 
 export function Alerts() {
   const q = useQuery();
@@ -70,7 +71,7 @@ function Policies() {
               {data.map((p) => (
                 <tr key={p.id}>
                   <td>{admin ? <button class="linklike strong" onClick={() => setEdit(p)}>{p.name}</button> : <span class="strong">{p.name}</span>} {!p.enabled && <Badge>disabled</Badge>}</td>
-                  <td>{p.metric === 'offline' ? `Offline for ${p.duration_minutes} min` : `${metricLabel[p.metric]} ${p.operator} ${p.threshold}% for ${p.duration_minutes} min`}</td>
+                  <td>{p.metric === 'offline' ? `Offline for ${p.duration_minutes} min` : p.metric === 'ups_battery' ? `UPS on battery for ${p.duration_minutes} min` : `${metricLabel[p.metric]} ${p.operator} ${p.threshold}${unit(p.metric)} for ${p.duration_minutes} min`}</td>
                   <td><Severity s={p.severity} /></td>
                   <td class="hide-sm">{p.client_name || 'All clients'}</td>
                   <td class="hide-sm small">{[p.notify && 'Notify', p.create_ticket && 'Create ticket'].filter(Boolean).join(', ') || '—'}</td>
@@ -101,9 +102,9 @@ function PolicyEditor({ p, onClose, onSaved }: { p: any; onClose: () => void; on
       <Field label="Name"><input value={v.name || ''} onInput={(e) => set('name', (e.target as HTMLInputElement).value)} /></Field>
       <div class="row-fields">
         <Field label="Metric"><select value={v.metric} onChange={(e) => set('metric', (e.target as HTMLSelectElement).value)}>{Object.entries(metricLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-        {v.metric !== 'offline' && <Field label="Operator"><select value={v.operator} onChange={(e) => set('operator', (e.target as HTMLSelectElement).value)}><option value=">">above</option><option value="<">below</option></select></Field>}
-        {v.metric !== 'offline' && <Field label="Threshold (%)"><input type="number" value={v.threshold} onInput={(e) => set('threshold', +(e.target as HTMLInputElement).value)} /></Field>}
-        <Field label={v.metric === 'offline' ? 'Offline for (min)' : 'Sustained for (min)'}><input type="number" min={1} value={v.duration_minutes} onInput={(e) => set('duration_minutes', +(e.target as HTMLInputElement).value)} /></Field>
+        {v.metric !== 'offline' && v.metric !== 'ups_battery' && <Field label="Operator"><select value={v.operator} onChange={(e) => set('operator', (e.target as HTMLSelectElement).value)}><option value=">">above</option><option value="<">below</option></select></Field>}
+        {v.metric !== 'offline' && v.metric !== 'ups_battery' && <Field label={v.metric === 'power' ? 'Threshold (watts)' : 'Threshold (%)'}><input type="number" value={v.threshold} onInput={(e) => set('threshold', +(e.target as HTMLInputElement).value)} /></Field>}
+        <Field label={v.metric === 'offline' ? 'Offline for (min)' : v.metric === 'ups_battery' ? 'On battery for (min)' : 'Sustained for (min)'}><input type="number" min={1} value={v.duration_minutes} onInput={(e) => set('duration_minutes', +(e.target as HTMLInputElement).value)} /></Field>
       </div>
       <div class="row-fields">
         <Field label="Severity"><select value={v.severity} onChange={(e) => set('severity', (e.target as HTMLSelectElement).value)}><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></Field>

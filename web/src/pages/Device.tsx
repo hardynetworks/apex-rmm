@@ -11,6 +11,7 @@ import { useCan } from '../user';
 import { JobOutput, RunScriptModal } from './Scripts';
 import { TerminalView } from './Terminal';
 import { NewTicketModal } from './Tickets';
+import { DevicePower, KindBadge, fmtW } from './Power';
 
 const SERIES_BLUE = 'var(--series-1)';
 const SERIES_ORANGE = 'var(--series-2)';
@@ -52,6 +53,7 @@ export function DevicePage({ id }: { id: string }) {
   const tabs = [
     { id: 'overview', label: 'Overview', icon: 'info' },
     { id: 'performance', label: 'Performance', icon: 'activity' },
+    { id: 'power', label: 'Power', icon: 'bolt' },
     ...(tech ? [{ id: 'terminal', label: 'Terminal', icon: 'terminal' }, { id: 'processes', label: 'Processes', icon: 'list' }, { id: 'services', label: 'Services', icon: 'server' }, { id: 'software', label: 'Software', icon: 'box' }] : []),
     { id: 'scripts', label: 'History', icon: 'code' },
     { id: 'alerts', label: 'Alerts', icon: 'bell', count: d.open_alerts },
@@ -89,6 +91,7 @@ export function DevicePage({ id }: { id: string }) {
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === 'overview' && <Overview d={d} />}
       {tab === 'performance' && <Performance id={id} />}
+      {tab === 'power' && <DevicePower d={d} tech={tech} onSaved={setData} />}
       {tab === 'terminal' && (d.online ? <Card pad={false} class="term-card"><TerminalView id={id} os={d.os} /></Card> : <Card><Empty icon="terminal" title="Device is offline">The terminal is available when the agent is connected.</Empty></Card>)}
       {tab === 'processes' && <Processes id={id} online={d.online} />}
       {tab === 'services' && <Services id={id} online={d.online} />}
@@ -117,6 +120,7 @@ function Overview({ d }: { d: any }) {
         <Kv items={[
           ['Status', d.online ? 'Online' : `Offline — last seen ${timeAgo(d.last_seen)}`],
           ['Uptime', d.online ? fmtUptime(d.boot_time) : '—'],
+          ...(d.power_w != null ? [['Power', <Link href={`/devices/${d.id}?tab=power`}>{fmtW(d.power_w)} <KindBadge kind={d.power_kind} /></Link>] as [string, any]] : []),
           ['Logged-in users', d.logged_in_users?.join(', ') || 'None'],
           ['Agent version', d.agent_version],
         ]} />

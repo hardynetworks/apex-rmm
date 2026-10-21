@@ -2,6 +2,7 @@ import { Icon } from '../icons';
 import { Link } from '../router';
 import { Card, Empty, ErrorBox, Meter, OsBadge, PageHeader, Priority, Severity, Spinner, StatusBadge, timeAgo, useFetch } from '../ui';
 import { useUser } from '../user';
+import { FleetPowerCard } from './Power';
 
 function Stat({ label, value, sub, icon, tone, href }: { label: string; value: any; sub?: any; icon: string; tone?: string; href: string }) {
   return (
@@ -36,6 +37,7 @@ export function Dashboard() {
       </div>
 
       <div class="grid-2">
+        <FleetPowerCard />
         <Card title="Active alerts" actions={<Link href="/alerts" class="link">View all</Link>} pad={false}>
           {data.recent_alerts.length === 0 ? <Empty icon="check" title="All clear">No open alerts.</Empty> : (
             <ul class="list">
