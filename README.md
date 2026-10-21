@@ -6,6 +6,7 @@ A self-hosted Remote Monitoring & Management platform that runs in Docker, signs
 |---|---|
 | **Remote control** | Built-in browser remote desktop written from scratch (screen capture, dirty-tile streaming with scroll detection, keyboard/mouse injection, **file transfer**) with **RustDesk** as a one-click backup connection |
 | **Monitoring & alerts** | Live CPU / memory / disk / network, 14-day history charts, threshold & offline policies, webhook notifications (Discord, Slack, ntfy, generic), maintenance mode |
+| **Power monitoring** | Watts per device (IPMI, power meters, smart plugs, UPS, CPU/GPU counters or an estimate), daily kWh and cost, UPS status, power and on-battery alerts |
 | **Scripting & automation** | Script library (PowerShell, cmd, Bash, sh, zsh, Python), run on one/many/all devices, per-device output, cron schedules, queued runs for offline devices |
 | **Ticketing / PSA** | Tickets linked to clients & devices, assignees, priorities, due dates, internal notes, time tracking, alerts → tickets |
 | **Device tools** | Web terminal (real PTY / Windows ConPTY), processes (kill), services (start/stop/restart), installed software, reboot/shutdown, agent self-update |
@@ -225,6 +226,33 @@ The viewer switches to touch controls automatically, with a bar at the bottom of
 ### RustDesk (backup)
 
 `docker compose` also runs `hbbs`/`hbbr`. On a device page, **RustDesk → Install & configure** installs the RustDesk client on the endpoint (if needed), points it at your server with its public key, and sets a random per-device password. **Connect with RustDesk** then opens your local RustDesk app straight into the session. Your technicians' RustDesk clients need the ID server and key shown under **Settings → General**.
+
+## Power monitoring
+
+Every agent reports how much power its device draws, with each metrics sample (every 30 seconds). The server adds the samples up into kWh per day, so you can see each device's and the whole fleet's energy use and cost. Open a device's **Power** tab, or the **Power** card on the dashboard.
+
+No operating system reports the power a computer pulls from the wall, so each reading is labelled with where it came from:
+
+| Label | Sources (best first) |
+|---|---|
+| **Measured** (whole device) | the server's management board (IPMI/DCMI, via `ipmitool` on Linux or the built-in IPMI driver on Windows); an ACPI power meter; a laptop running on battery; a MacBook's power telemetry; or a smart plug / UPS you choose in the device's power settings |
+| **Components only** | CPU package and RAM energy counters (Intel/AMD RAPL on Linux, the "Energy Meter" counters on Windows, `powermetrics` on Macs), NVIDIA (`nvidia-smi`) and AMD GPUs. The rest of the machine isn't included; add it as **Extra watts** |
+| **Estimate** | idle watts + (full-load watts − idle) × CPU load. Set the two numbers per device to make it closer |
+
+**Per-device power settings** (device → Power → Power settings, technician and up):
+
+- **Automatic**: the best source the device has, in the order above.
+- **Smart plug**: Shelly (Gen1 and Plus/Pro/Gen3/Gen4), Tasmota, TP-Link Kasa (local protocol; plugs on newer firmware that needs a TP-Link login aren't supported), or any URL that returns JSON with the watts in it. The agent reads the plug over the device's own network, so the plug only has to be reachable from that device.
+- **UPS**: the UPS's output power from **NUT** (`upsd`, port 3493) or **apcupsd** (port 3551), on the device itself or another machine. If several machines share the UPS, set this device's share in %. Without a real-power reading, watts are worked out from load % × the VA rating × 0.6 and marked as an estimate.
+- **Estimate** or **Off**.
+
+Any device that can see a NUT or apcupsd server also shows the UPS's status (on mains / on battery, charge, runtime left, load) on its Power tab and on the dashboard.
+
+**Costs**: set your electricity rate (price per kWh), currency symbol and time zone in **Settings → General → Power & energy**. Daily totals start at midnight in that time zone.
+
+**Alerts**: new policy types **Power draw** (average watts above or below a threshold) and **UPS on battery** (the UPS has been on battery for N minutes).
+
+Daily kWh totals are kept for three years; the per-sample history follows the metrics retention.
 
 ## Desktop app (Windows)
 
