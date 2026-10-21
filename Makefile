@@ -11,12 +11,7 @@ server:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/apex-server ./cmd/apex-server
 
 agents:
-	@mkdir -p dist/agents
-	@for t in $(PLATFORMS); do \
-		os=$${t%/*}; arch=$${t#*/}; ext=""; [ $$os = windows ] && ext=".exe"; \
-		echo "agent $$os/$$arch"; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch GOARM=7 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/agents/apex-agent-$$os-$$arch$$ext ./cmd/apex-agent || exit 1; \
-	done
+	sh scripts/build-agents.sh dist/agents "$(LDFLAGS)"
 
 web:
 	cd web && npm install && npm run build

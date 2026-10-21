@@ -19,12 +19,8 @@ RUN go mod download && go build ./... || (echo "regenerating go.sum" && rm -f go
 ARG VERSION=0.1.0
 ENV LDFLAGS="-s -w -X github.com/hardynetworks/apex-rmm/internal/proto.Version=${VERSION}"
 RUN go build -ldflags "$LDFLAGS" -o /out/apex-server ./cmd/apex-server
-RUN set -e; mkdir -p /out/agents; \
-    for t in windows/amd64 windows/arm64 linux/amd64 linux/arm64 linux/arm darwin/amd64 darwin/arm64; do \
-      os=${t%/*}; arch=${t#*/}; ext=""; [ "$os" = windows ] && ext=".exe"; \
-      echo "building agent $os/$arch"; \
-      GOOS=$os GOARCH=$arch GOARM=7 go build -ldflags "$LDFLAGS" -o /out/agents/apex-agent-$os-$arch$ext ./cmd/apex-agent; \
-    done
+COPY scripts/build-agents.sh ./scripts/
+RUN sh scripts/build-agents.sh /out/agents "$LDFLAGS"
 
 # ---- runtime ----
 FROM alpine:3.20
