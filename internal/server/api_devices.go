@@ -19,8 +19,15 @@ const deviceCols = `d.id, d.client_id, d.site_id, c.name AS client_name, st.name
 	d.agent_version, d.public_ip, d.local_ips, d.logged_in_users, d.online, d.last_seen, d.boot_time, d.cpu_pct, d.mem_pct, d.disk_pct,
 	CASE WHEN d.online AND d.power_at > now() - interval '5 minutes' THEN d.power_w END AS power_w, d.power_kind, d.power_src, d.power_at,
 	d.ups_on_battery, d.power_info, d.energy_conf,
+	d.device_type, ` + deviceTypeExpr + ` AS type, d.inventory->'gpus' AS gpu_names,
+	CASE WHEN d.online THEN d.gpus ELSE '[]'::jsonb END AS gpus, CASE WHEN d.online THEN d.gpu_pct END AS gpu_pct,
 	d.rustdesk_id, (d.rustdesk_password <> '') AS rustdesk_ready, d.notes, d.tags, d.maintenance_until, d.created_at,
 	(SELECT count(*) FROM alerts a WHERE a.device_id=d.id AND a.status<>'resolved') AS open_alerts`
+
+// deviceTypeExpr is the device's group: the type set by hand, else the one the agent detected.
+const deviceTypeExpr = `coalesce(nullif(d.device_type,''), nullif(d.inventory->>'chassis',''), 'other')`
+
+var deviceTypes = map[string]bool{"server": true, "desktop": true, "laptop": true, "virtual": true, "other": true}
 
 const deviceFrom = ` FROM devices d LEFT JOIN clients c ON c.id=d.client_id LEFT JOIN sites st ON st.id=d.site_id `
 
@@ -40,6 +47,16 @@ func (s *Server) listDevices(w http.ResponseWriter, r *http.Request) {
 	}
 	if v := q.Get("os"); v != "" {
 		add("d.os = ?", v)
+	}
+	if v := q.Get("ids"); v != "" { // the top bar's device tabs
+		ids := strings.Split(v, ",")
+		if len(ids) > 50 {
+			ids = ids[:50]
+		}
+		add("d.id = ANY(?)", ids)
+	}
+	if v := q.Get("type"); v != "" {
+		add(deviceTypeExpr+" = ?", v)
 	}
 	switch q.Get("status") {
 	case "online":
@@ -77,6 +94,7 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 		MaintenanceUntil *time.Time          `json:"maintenance_until"`
 		ClearMaintenance bool                `json:"clear_maintenance"`
 		EnergyConf       *proto.EnergyConfig `json:"energy_conf"`
+		DeviceType       *string             `json:"device_type"` // "" = detected
 	}
 	if err := decode(r, &in); err != nil {
 		fail(w, err)
@@ -89,6 +107,14 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Notes != nil {
 		_, _ = s.db.Exec(ctx, `UPDATE devices SET notes=$2 WHERE id=$1`, id, *in.Notes)
+	}
+	if in.DeviceType != nil {
+		t := strings.TrimSpace(*in.DeviceType)
+		if t != "" && !deviceTypes[t] {
+			fail(w, badRequest("device type must be server, desktop, laptop, virtual or other"))
+			return
+		}
+		_, _ = s.db.Exec(ctx, `UPDATE devices SET device_type=$2 WHERE id=$1`, id, t)
 	}
 	if in.Tags != nil {
 		_, _ = s.db.Exec(ctx, `UPDATE devices SET tags=$2 WHERE id=$1`, id, in.Tags)
@@ -153,7 +179,8 @@ func (s *Server) deviceMetrics(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Maps(r.Context(), `
 		SELECT to_timestamp(floor(extract(epoch FROM ts)/$3)*$3) AS ts,
 		       round(avg(cpu)::numeric,1)::float8 AS cpu, round(avg(mem)::numeric,1)::float8 AS mem, round(avg(disk)::numeric,1)::float8 AS disk,
-		       avg(net_rx)::float8 AS net_rx, avg(net_tx)::float8 AS net_tx, round(avg(power_w)::numeric,1)::float8 AS power_w
+		       avg(net_rx)::float8 AS net_rx, avg(net_tx)::float8 AS net_tx, round(avg(power_w)::numeric,1)::float8 AS power_w,
+		       round(avg(gpu)::numeric,1)::float8 AS gpu, round(avg(gpu_mem)::numeric,1)::float8 AS gpu_mem
 		FROM device_metrics WHERE device_id=$1 AND ts > now() - make_interval(hours => $2)
 		GROUP BY 1 ORDER BY 1`, chi.URLParam(r, "id"), hours, bucket)
 	if err != nil {

@@ -342,3 +342,24 @@ CREATE TABLE IF NOT EXISTS vsphere_host_power (
     fan_min_rpm   real,
     PRIMARY KEY (connection_id, host_ref, ts)
 );
+
+-- GPU monitoring and device types --------------------------------------------
+
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS gpus jsonb NOT NULL DEFAULT '[]';   -- latest per-GPU state
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS gpu_pct real;                       -- busiest GPU's load
+ALTER TABLE device_metrics ADD COLUMN IF NOT EXISTS gpu real;                    -- busiest GPU's load %
+ALTER TABLE device_metrics ADD COLUMN IF NOT EXISTS gpu_mem real;                -- fullest GPU's video memory %
+-- Device type for grouping: set by hand, else detected by the agent (inventory.chassis).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS device_type text NOT NULL DEFAULT '';
+
+-- Daily energy of vSphere hosts, counted alongside agent devices on the Power page.
+CREATE TABLE IF NOT EXISTS vsphere_host_energy_daily (
+    connection_id text NOT NULL REFERENCES vsphere_connections(id) ON DELETE CASCADE,
+    host_ref      text NOT NULL,
+    host_name     text NOT NULL DEFAULT '',
+    day           date NOT NULL,
+    wh            double precision NOT NULL DEFAULT 0,
+    PRIMARY KEY (connection_id, host_ref, day)
+);
+CREATE INDEX IF NOT EXISTS vsphere_host_energy_daily_day ON vsphere_host_energy_daily (day);
+ALTER TABLE vsphere_host_energy_daily ADD COLUMN IF NOT EXISTS est_wh double precision NOT NULL DEFAULT 0; -- from CPU-load estimates

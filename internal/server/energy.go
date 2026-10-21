@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -182,7 +183,7 @@ func (s *Server) fleetEnergy(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	top, err := s.db.Maps(ctx, `SELECT d.id, coalesce(nullif(d.display_name,''), d.hostname) AS name, d.online,
+	top, err := s.db.Maps(ctx, `SELECT d.id, 'device' AS type, coalesce(nullif(d.display_name,''), d.hostname) AS name, d.online,
 		CASE WHEN d.online AND d.power_at > now() - interval '5 minutes' THEN d.power_w END AS power_w, d.power_kind, d.power_src,
 		(coalesce(sum(e.wh),0)/1000)::float8 AS month_kwh
 		FROM devices d LEFT JOIN device_energy_daily e ON e.device_id=d.id AND e.day >= $1::date
@@ -199,8 +200,106 @@ func (s *Server) fleetEnergy(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	// vSphere hosts count like measured devices (their draw includes the VMs on them).
+	hostsNow, err := s.db.Map(ctx, `SELECT coalesce(sum((h->>'power_watts')::float8),0)::float8 AS watts, count(*) AS hosts,
+		count(*) FILTER (WHERE h->>'power_source' = 'estimate') AS estimated
+		FROM vsphere_inventory i JOIN vsphere_connections c ON c.id=i.connection_id, jsonb_array_elements(i.data->'hosts') h
+		WHERE c.enabled AND i.updated_at > now() - make_interval(secs => greatest(300, c.poll_seconds*3))
+		AND h ? 'power_watts' AND ($1::text IS NULL OR c.client_id=$1)`, client)
+	if err == nil {
+		now["watts"] = num(now["watts"]) + num(hostsNow["watts"])
+		now["hosts"] = hostsNow["hosts"]
+		now["hosts_estimated"] = hostsNow["estimated"]
+	}
+	hostDays, _ := s.db.Maps(ctx, `SELECT to_char(e.day,'YYYY-MM-DD') AS day, (sum(e.wh)/1000)::float8 AS kwh, (sum(e.est_wh)/1000)::float8 AS est_kwh
+		FROM vsphere_host_energy_daily e JOIN vsphere_connections c ON c.id=e.connection_id
+		WHERE e.day >= $1::date AND ($2::text IS NULL OR c.client_id=$2) GROUP BY e.day`, from, client)
+	daysRows = mergeDays(daysRows, hostDays)
+	if ht, err := s.db.Map(ctx, `SELECT
+		(coalesce(sum(e.wh) FILTER (WHERE e.day = $1::date), 0)/1000)::float8 AS today,
+		(coalesce(sum(e.wh) FILTER (WHERE e.day >= $2::date), 0)/1000)::float8 AS month,
+		(coalesce(sum(e.wh) FILTER (WHERE e.day >= $3::date), 0)/1000)::float8 AS period
+		FROM vsphere_host_energy_daily e JOIN vsphere_connections c ON c.id=e.connection_id
+		WHERE e.day >= least($2::date, $3::date) AND ($4::text IS NULL OR c.client_id=$4)`, today, month, from, client); err == nil {
+		for _, k := range []string{"today", "month", "period"} {
+			tot[k] = num(tot[k]) + num(ht[k])
+		}
+	}
+	hostTop, _ := s.db.Maps(ctx, `WITH cur AS (
+			SELECT c.id AS conn, h->>'ref' AS ref, h->>'name' AS name, (h->>'power_watts')::float8 AS power_w, h->>'power_source' AS src
+			FROM vsphere_inventory i JOIN vsphere_connections c ON c.id=i.connection_id, jsonb_array_elements(i.data->'hosts') h
+			WHERE c.enabled AND i.updated_at > now() - make_interval(secs => greatest(300, c.poll_seconds*3)) AND ($2::text IS NULL OR c.client_id=$2)),
+		mon AS (
+			SELECT e.connection_id AS conn, e.host_ref AS ref, max(e.host_name) AS name, (sum(e.wh)/1000)::float8 AS month_kwh
+			FROM vsphere_host_energy_daily e JOIN vsphere_connections c ON c.id=e.connection_id
+			WHERE e.day >= $1::date AND ($2::text IS NULL OR c.client_id=$2) GROUP BY 1, 2)
+		SELECT coalesce(cur.name, mon.name) AS name, cur.power_w, cur.src, coalesce(mon.month_kwh, 0)::float8 AS month_kwh,
+			coalesce(cur.conn, mon.conn) AS connection_id, coalesce(cur.ref, mon.ref) AS host_ref
+		FROM cur FULL JOIN mon ON mon.conn=cur.conn AND mon.ref=cur.ref
+		WHERE cur.power_w IS NOT NULL OR mon.month_kwh > 0`, month, client)
+	for _, h := range hostTop {
+		h["type"] = "vsphere"
+		h["online"] = h["power_w"] != nil
+		h["power_kind"], h["power_src"] = "measured", "vsphere"
+		if h["src"] == "estimate" {
+			h["power_kind"] = "estimate"
+		}
+		delete(h, "src")
+		top = append(top, h)
+	}
+	sort.SliceStable(top, func(i, j int) bool {
+		a, b := num(top[i]["month_kwh"]), num(top[j]["month_kwh"])
+		if a != b {
+			return a > b
+		}
+		return num(top[i]["power_w"]) > num(top[j]["power_w"])
+	})
+	if len(top) > 10 {
+		top = top[:10]
+	}
 	writeJSON(w, 200, map[string]any{"now": now, "days": daysRows, "today_kwh": tot["today"], "month_kwh": tot["month"],
 		"period_kwh": tot["period"], "top": top, "ups": ups, "rate": es.Rate, "currency": es.Currency})
+}
+
+// num reads a number from a database row value (nil is 0).
+func num(v any) float64 {
+	switch x := v.(type) {
+	case float64:
+		return x
+	case float32:
+		return float64(x)
+	case int64:
+		return float64(x)
+	case int32:
+		return float64(x)
+	case int:
+		return float64(x)
+	}
+	return 0
+}
+
+// mergeDays adds the hosts' daily kWh into the devices' days (by date, sorted).
+func mergeDays(days, hosts []map[string]any) []map[string]any {
+	if len(hosts) == 0 {
+		return days
+	}
+	by := map[string]map[string]any{}
+	for _, d := range days {
+		by[d["day"].(string)] = d
+	}
+	for _, h := range hosts {
+		day, _ := h["day"].(string)
+		if d, ok := by[day]; ok {
+			d["kwh"] = num(d["kwh"]) + num(h["kwh"])
+			d["est_kwh"] = num(d["est_kwh"]) + num(h["est_kwh"])
+		} else {
+			row := map[string]any{"day": day, "kwh": num(h["kwh"]), "est_kwh": num(h["est_kwh"])}
+			by[day] = row
+			days = append(days, row)
+		}
+	}
+	sort.Slice(days, func(i, j int) bool { return days[i]["day"].(string) < days[j]["day"].(string) })
+	return days
 }
 
 // ---- per-device power settings ----

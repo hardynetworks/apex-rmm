@@ -236,7 +236,14 @@ func TestVSphereEndToEnd(t *testing.T) {
 	{
 		w1, w2 := 310.0, 190.0
 		pinv, _, _ := e.s.loadInventory(ctx, id)
+		for i := range pinv.Hosts { // only the first two hosts report power (no estimates)
+			pinv.Hosts[i].PowerWatts, pinv.Hosts[i].PowerSource = nil, ""
+		}
 		pinv.Hosts[0].PowerWatts, pinv.Hosts[1].PowerWatts = &w1, &w2
+		pinv.Hosts[0].PowerSource, pinv.Hosts[1].PowerSource = "counter", "sensor"
+		// forget what the earlier polls recorded (the simulator's hosts are estimated)
+		_, _ = e.s.db.Exec(ctx, `DELETE FROM vsphere_host_power WHERE connection_id=$1`, id)
+		_, _ = e.s.db.Exec(ctx, `DELETE FROM vsphere_host_energy_daily WHERE connection_id=$1`, id)
 		pinv.Hosts[0].Readings = []vsphere.Reading{
 			{Name: "CPU1 Temp", Kind: "temperature", Value: 61, Unit: "C", State: "green"},
 			{Name: "Fan 1", Kind: "fan", Value: 4200, Unit: "RPM", State: "green"},
@@ -244,7 +251,7 @@ func TestVSphereEndToEnd(t *testing.T) {
 		}
 		praw, _ := json.Marshal(pinv)
 		_, _ = e.s.db.Exec(ctx, `UPDATE vsphere_inventory SET data=$2 WHERE connection_id=$1`, id, praw)
-		e.s.recordHostPower(ctx, id, pinv)
+		e.s.recordHostPower(ctx, id, pinv, 60)
 		_, m, raw = e.do("viewer", "GET", "/api/vsphere/connections/"+id+"/inventory", nil)
 		im, _ := m["inventory"].(map[string]any)
 		pw, _ := im["power"].(map[string]any)
@@ -274,8 +281,48 @@ func TestVSphereEndToEnd(t *testing.T) {
 		if cnt != 2 {
 			t.Errorf("expected 2 history rows (only hosts with data), got %d", cnt)
 		}
+		// energy: the first reading only starts the count; the next adds watts × time since then
+		var wh float64
+		_ = e.s.db.QueryRow(ctx, `SELECT coalesce(sum(wh),0) FROM vsphere_host_energy_daily WHERE connection_id=$1`, id).Scan(&wh)
+		if wh != 0 {
+			t.Errorf("first reading counted energy: %v Wh", wh)
+		}
+		_, _ = e.s.db.Exec(ctx, `UPDATE vsphere_host_power SET ts = ts - interval '60 seconds' WHERE connection_id=$1`, id)
+		e.s.recordHostPower(ctx, id, pinv, 60)
+		_ = e.s.db.QueryRow(ctx, `SELECT coalesce(sum(wh),0) FROM vsphere_host_energy_daily WHERE connection_id=$1`, id).Scan(&wh)
+		if wh < 8.2 || wh > 8.5 { // (310 + 190) W × 60 s = 8.33 Wh
+			t.Errorf("host energy = %.2f Wh, want 8.33", wh)
+		}
+		// ...and the Power page counts the hosts
+		_, fm, fraw := e.do("viewer", "GET", "/api/energy?days=7", nil)
+		fnow, _ := fm["now"].(map[string]any)
+		if fnow["watts"].(float64) < 500 || fnow["hosts"] != 2.0 || fnow["hosts_estimated"] != 0.0 {
+			t.Errorf("fleet power should include the hosts: %.300s", fraw)
+		}
+		foundHost := false
+		for _, x := range fm["top"].([]any) {
+			r := x.(map[string]any)
+			if r["type"] == "vsphere" && r["power_w"] == 310.0 && r["month_kwh"].(float64) > 0 {
+				foundHost = true
+			}
+		}
+		if !foundHost || fm["today_kwh"].(float64) < 0.008 {
+			t.Errorf("fleet energy should list the host and its kWh: %.600s", fraw)
+		}
 		// restore the real inventory so later steps see unmodified data
 		e.pollNow(id)
+		// the simulator's hosts have no power data: they are estimated from CPU load, and say so
+		_, fm, fraw = e.do("viewer", "GET", "/api/energy?days=7", nil)
+		fnow, _ = fm["now"].(map[string]any)
+		estTop := false
+		for _, x := range fm["top"].([]any) {
+			if r := x.(map[string]any); r["type"] == "vsphere" && r["power_kind"] == "estimate" {
+				estTop = true
+			}
+		}
+		if fnow["hosts_estimated"] == 0.0 || !estTop {
+			t.Errorf("hosts without power data should be estimated: %.500s", fraw)
+		}
 	}
 
 	// power: technician ok, viewer forbidden

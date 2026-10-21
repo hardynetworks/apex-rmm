@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -160,9 +161,29 @@ func (s *Server) recordMetrics(ctx context.Context, id string, m *proto.Metrics)
 			onBatt = &m.Energy.UPS.OnBattery
 		}
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO device_metrics (device_id, cpu, mem, disk, net_rx, net_tx, power_w, on_batt) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		id, m.CPU, m.Mem, m.Disk, int64(m.NetRx), int64(m.NetTx), watts, onBatt)
+	gpuLoad, gpuMem := gpuSummary(m.GPUs)
+	_, _ = s.db.Exec(ctx, `UPDATE devices SET gpus=$2, gpu_pct=$3 WHERE id=$1`, id, mustJSON(m.GPUs), gpuLoad)
+	_, _ = s.db.Exec(ctx, `INSERT INTO device_metrics (device_id, cpu, mem, disk, net_rx, net_tx, power_w, on_batt, gpu, gpu_mem) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		id, m.CPU, m.Mem, m.Disk, int64(m.NetRx), int64(m.NetTx), watts, onBatt, gpuLoad, gpuMem)
 	s.recordEnergy(ctx, id, m.Energy)
+}
+
+// gpuSummary is the busiest GPU's load and the fullest GPU's video memory (%), nil when no GPU
+// reports them.
+func gpuSummary(gpus []proto.GPU) (load, mem *float64) {
+	for _, g := range gpus {
+		if g.Load >= 0 && (load == nil || g.Load > *load) {
+			v := g.Load
+			load = &v
+		}
+		if g.MemTotal > 0 && !g.Shared {
+			v := math.Round(float64(g.MemUsed)/float64(g.MemTotal)*1000) / 10
+			if mem == nil || v > *mem {
+				mem = &v
+			}
+		}
+	}
+	return
 }
 
 func mustJSON(v any) string {

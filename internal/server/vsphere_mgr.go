@@ -224,14 +224,14 @@ func (m *vsphereMgr) poll(ctx context.Context, id string) error {
 	m.mu.Lock()
 	m.fails[id] = 0
 	m.mu.Unlock()
-	m.s.recordHostPower(ctx, id, inv)
+	m.s.recordHostPower(ctx, id, inv, int(c.PollSeconds))
 	m.s.reconcileSourceAlerts(ctx, vsAlertPrefix(id), vsphereAlerts(c, inv), c.Notify, c.CreateTickets, c.ClientID, c.Name)
 	return nil
 }
 
 // recordHostPower stores one history point per host that reports power draw,
 // temperature or fan speed. Failures are ignored: history is best effort.
-func (s *Server) recordHostPower(ctx context.Context, id string, inv *vsphere.Inventory) {
+func (s *Server) recordHostPower(ctx context.Context, id string, inv *vsphere.Inventory, pollSec int) {
 	for _, h := range inv.Hosts {
 		var watts, temp, fan *float64
 		watts = h.PowerWatts
@@ -244,8 +244,46 @@ func (s *Server) recordHostPower(ctx context.Context, id string, inv *vsphere.In
 		if watts == nil && temp == nil && fan == nil {
 			continue
 		}
+		if watts != nil {
+			s.recordHostEnergy(ctx, id, h.Ref, h.Name, *watts, h.PowerSource == "estimate", pollSec)
+		}
 		_, _ = s.db.Exec(ctx, `INSERT INTO vsphere_host_power (connection_id, host_ref, ts, watts, temp_c, fan_min_rpm)
 			VALUES ($1,$2,date_trunc('second', now()),$3,$4,$5) ON CONFLICT DO NOTHING`, id, h.Ref, watts, temp, fan)
+	}
+}
+
+// recordHostEnergy adds the energy since the host's previous power reading to its daily total,
+// like recordEnergy does for agents. Gaps longer than a few poll intervals are not counted.
+func (s *Server) recordHostEnergy(ctx context.Context, conn, ref, name string, watts float64, estimated bool, pollSec int) {
+	var prev *time.Time
+	_ = s.db.QueryRow(ctx, `SELECT max(ts) FROM vsphere_host_power WHERE connection_id=$1 AND host_ref=$2 AND watts IS NOT NULL
+		AND ts > now() - interval '1 day'`, conn, ref).Scan(&prev)
+	if prev == nil {
+		return // the first reading only starts the count
+	}
+	dt := time.Since(*prev)
+	maxGap := 3 * time.Duration(pollSec) * time.Second // a missed poll or two still counts
+	if maxGap < 5*time.Minute {
+		maxGap = 5 * time.Minute
+	}
+	if dt <= 0 || dt > maxGap {
+		return
+	}
+	wh := watts * dt.Hours()
+	if wh <= 0 {
+		return
+	}
+	day := time.Now().In(s.energySettings(ctx).Loc).Format("2006-01-02")
+	est := 0.0
+	if estimated {
+		est = wh
+	}
+	_, err := s.db.Exec(ctx, `INSERT INTO vsphere_host_energy_daily (connection_id, host_ref, host_name, day, wh, est_wh) VALUES ($1,$2,$3,$4::date,$5,$6)
+		ON CONFLICT (connection_id, host_ref, day) DO UPDATE SET wh = vsphere_host_energy_daily.wh + EXCLUDED.wh,
+		est_wh = vsphere_host_energy_daily.est_wh + EXCLUDED.est_wh, host_name = EXCLUDED.host_name`,
+		conn, ref, name, day, wh, est)
+	if err != nil {
+		slog.Error("record host energy", "host", name, "err", err)
 	}
 }
 
