@@ -34,7 +34,8 @@ const nav = [
 ];
 
 function useTheme(): [string, () => void] {
-  const [theme, setTheme] = useState<string>(document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  // dark is the default look; light stays available from the top bar
+  const [theme, setTheme] = useState<string>(document.documentElement.dataset.theme || 'dark');
   const toggle = () => {
     const t = theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = t;
@@ -88,48 +89,90 @@ function Shell({ user, children, path }: { user: User; children: ComponentChildr
     location.href = r.redirect || '/login';
   };
   const active = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+  const current = nav.find((n) => active(n.href));
+  const initials = (user.name || user.email || '?').split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   return (
     <div class={'shell ' + (open ? 'nav-open' : '')}>
       <aside class="sidebar">
         <div class="brand">
-          <div class="logo"><svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M8.5 24L16 8l7.5 16M11.6 18.5h8.8" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-          <div>
+          <div class="logo glow">
+            <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M8.5 24L16 8l7.5 16M11.6 18.5h8.8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </div>
+          <div class="brand-text">
             <strong>{company}</strong>
             <small>Remote Management</small>
           </div>
         </div>
         <nav>
-          {nav.map((n) => (
-            <Link key={n.href} href={n.href} class={'nav-item ' + (active(n.href) ? 'active' : '')}>
-              <Icon name={n.icon} size={19} />
-              <span>{n.label}</span>
-              {n.badge && (counts as any)[n.badge] > 0 && <span class="nav-badge">{(counts as any)[n.badge]}</span>}
-            </Link>
-          ))}
+          {nav.map((n) => {
+            const on = active(n.href);
+            const count = n.badge ? (counts as any)[n.badge] : 0;
+            return (
+              <Link key={n.href} href={n.href} class={'nav-item ' + (on ? 'active' : '')}>
+                <Icon name={n.icon} size={19} />
+                <span>{n.label}</span>
+                {count > 0 ? <span class="nav-badge">{count}</span> : on && <span class="nav-dot" />}
+              </Link>
+            );
+          })}
         </nav>
         <div class="sidebar-foot">
           <div class="me">
-            <div class="avatar">{(user.name || user.email || '?').slice(0, 1).toUpperCase()}</div>
+            <div class="avatar">{initials}</div>
             <div class="me-text">
               <strong>{user.name || user.email}</strong>
-              <small>{user.role}{user.local ? ' · local' : ' · SSO'}</small>
+              <small>{user.email && user.name ? user.email : user.role + (user.local ? ' · local' : ' · SSO')}</small>
             </div>
-          </div>
-          <div class="foot-actions">
-            <button class="icon-btn" title={theme === 'dark' ? 'Light mode' : 'Dark mode'} onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button>
-            <button class="icon-btn" title="Sign out" onClick={logout}><Icon name="logout" /></button>
           </div>
         </div>
       </aside>
       <div class="scrim" onClick={() => setOpen(false)} />
       <main class="main">
-        <div class="mobile-bar">
-          <button class="icon-btn" onClick={() => setOpen(true)} aria-label="Menu"><Icon name="menu" /></button>
-          <strong>{company}</strong>
-        </div>
-        {children}
+        <TopBar title={current?.label || company} user={user} initials={initials} alerts={counts.alerts} theme={theme}
+          onTheme={toggleTheme} onMenu={() => setOpen(true)} onLogout={logout} />
+        <div class="main-scroll">{children}</div>
       </main>
     </div>
+  );
+}
+
+function TopBar({ title, user, initials, alerts, theme, onTheme, onMenu, onLogout }: {
+  title: string; user: User; initials: string; alerts: number; theme: string;
+  onTheme: () => void; onMenu: () => void; onLogout: () => void;
+}) {
+  const [menu, setMenu] = useState(false);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(false);
+    const t = setTimeout(() => document.addEventListener('click', close), 0);
+    return () => { clearTimeout(t); document.removeEventListener('click', close); };
+  }, [menu]);
+  return (
+    <header class="topbar">
+      <button class="icon-btn topbar-menu" onClick={onMenu} aria-label="Menu"><Icon name="menu" /></button>
+      <h2 class="topbar-title">{title}</h2>
+      <div class="topbar-actions">
+        <Link href="/alerts" class="icon-btn topbar-bell" title={alerts ? `${alerts} open alerts` : 'Alerts'} aria-label="Alerts">
+          <Icon name="bell" size={19} />
+          {alerts > 0 && <span class="pulse-dot" />}
+        </Link>
+        <button class="icon-btn" title={theme === 'dark' ? 'Light mode' : 'Dark mode'} onClick={onTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button>
+        <div class="menu-wrap">
+          <button class="profile-btn" onClick={() => setMenu(!menu)} aria-haspopup="menu" aria-expanded={menu}>
+            <span class="avatar sm-grad">{initials}</span>
+            <Icon name="chevronDown" size={15} />
+          </button>
+          {menu && (
+            <div class="menu" role="menu">
+              <div class="menu-head"><strong>{user.name || user.email}</strong><span class="muted small">{user.role}{user.local ? ' · local account' : ' · SSO'}</span></div>
+              <hr />
+              <Link href="/settings?tab=users" class="menu-link"><Icon name="user" size={16} /> Account</Link>
+              <button class="danger" onClick={onLogout}><Icon name="logout" size={16} /> Sign out</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
   );
 }
 

@@ -162,12 +162,12 @@ export function Button({ variant = 'default', icon, size = 'md', loading, childr
   );
 }
 
-export function Card({ title, actions, children, class: cls, pad = true }: { title?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; class?: string; pad?: boolean }) {
+export function Card({ title, icon, actions, children, class: cls, pad = true }: { title?: ComponentChildren; icon?: string; actions?: ComponentChildren; children?: ComponentChildren; class?: string; pad?: boolean }) {
   return (
     <section class={'card ' + (cls || '')}>
       {(title || actions) && (
         <header class="card-head">
-          <h3>{title}</h3>
+          <h3>{icon && <span class="card-icon"><Icon name={icon} size={18} /></span>}{title}</h3>
           <div class="card-actions">{actions}</div>
         </header>
       )}
@@ -223,8 +223,8 @@ export function Meter({ value, warn = 80, crit = 90 }: { value: number; warn?: n
   const tone = v >= crit ? 'crit' : v >= warn ? 'warn' : 'ok';
   return (
     <div class="meter" title={v.toFixed(1) + '%'}>
-      <div class={'meter-bar meter-' + tone} style={{ width: v + '%' }} />
-      <span class="meter-label">{Math.round(v)}%</span>
+      <div class="meter-track"><div class={'meter-bar meter-' + tone} style={{ width: v + '%' }} /></div>
+      <span class={'meter-label ' + tone}>{Math.round(v)}%</span>
     </div>
   );
 }
