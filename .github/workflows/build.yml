@@ -86,11 +86,22 @@ jobs:
           echo "--- dashboard"
           curl -fsS http://localhost:8080/ | grep -qi "<div id=\"app\"\|<script"
           echo "--- agent binaries"
-          for p in windows/amd64 linux/amd64 linux/arm64 darwin/arm64; do
+          for p in windows/amd64 linux/amd64 linux/arm64 linux/amd64-static darwin/arm64; do
             code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/download/agent/$p)
             echo "$p -> $code"
             [ "$code" = 200 ]
           done
+
+      - name: Linux agents from the image start on Ubuntu, Debian and Alpine
+        run: |
+          set -e
+          id=$(docker compose ps -q apex)
+          docker cp $id:/app/agents/apex-agent-linux-amd64 /tmp/agent
+          docker cp $id:/app/agents/apex-agent-linux-amd64-static /tmp/agent-static
+          file /tmp/agent /tmp/agent-static
+          /tmp/agent version
+          docker run --rm -v /tmp/agent:/agent:ro debian:bookworm-slim /agent version
+          docker run --rm -v /tmp/agent-static:/agent:ro alpine:3.20 /agent version
 
       - name: Logs
         if: always()
