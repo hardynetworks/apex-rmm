@@ -27,6 +27,7 @@ type Server struct {
 	db        *DB
 	auth      *Auth
 	hub       *Hub
+	vs        *vsphereMgr
 }
 
 // conf returns the current effective configuration.
@@ -44,6 +45,7 @@ func New(ctx context.Context, cfg *Config) (*Server, error) {
 		return nil, err
 	}
 	s.hub = newHub(s)
+	s.vs = newVsphereMgr(s)
 	s.auth = newAuth(s)
 	go s.auth.reloadWithRetry(ctx)
 	if s.setupNeeded(ctx) {
@@ -66,6 +68,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.alertLoop(ctx)
 	go s.schedulerLoop(ctx)
 	go s.cleanupLoop(ctx)
+	go s.vs.loop(ctx)
 	srv := &http.Server{Addr: s.conf().Listen, Handler: s.routes(), ReadHeaderTimeout: 15 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -133,6 +136,10 @@ func (s *Server) routes() http.Handler {
 			r.Get("/tickets", s.listTickets)
 			r.Get("/tickets/{id}", s.getTicket)
 			r.Get("/users", s.listUsers)
+			r.Get("/vsphere/connections", s.listVSphere)
+			r.Get("/vsphere/connections/{id}/inventory", s.vsphereInventory)
+			r.Get("/vsphere/connections/{id}/deploys", s.listVSphereDeploys)
+			r.Get("/vsphere/connections/{id}/hosts/{ref}/power", s.vsphereHostPower)
 
 			// technician+
 			r.Group(func(r chi.Router) {
@@ -160,6 +167,9 @@ func (s *Server) routes() http.Handler {
 				r.Put("/schedules/{id}", s.saveSchedule)
 				r.Delete("/schedules/{id}", s.deleteSchedule)
 				r.Post("/schedules/{id}/run", s.runScheduleNow)
+
+				r.Post("/vsphere/connections/{id}/refresh", s.refreshVSphere)
+				r.Post("/vsphere/connections/{id}/vms/{ref}/power", s.vsphereVMPower)
 
 				r.Post("/alerts/{id}/ack", s.ackAlert)
 				r.Post("/alerts/{id}/resolve", s.resolveAlert)
@@ -192,6 +202,11 @@ func (s *Server) routes() http.Handler {
 				r.Get("/settings/system", s.getSystemSettings)
 				r.Put("/settings/system", s.putSystemSettings)
 				r.Post("/settings/test-oidc", s.testOIDC)
+				r.Post("/vsphere/connections", s.saveVSphere)
+				r.Put("/vsphere/connections/{id}", s.saveVSphere)
+				r.Delete("/vsphere/connections/{id}", s.deleteVSphere)
+				r.Post("/vsphere/test", s.testVSphere)
+				r.Post("/vsphere/connections/{id}/deploy", s.deployVSphere)
 				r.Get("/audit", s.listAudit)
 				r.Delete("/tickets/{id}", s.deleteTicket)
 			})
@@ -266,6 +281,7 @@ func (s *Server) cleanupLoop(ctx context.Context) {
 	for {
 		_, _ = s.db.Exec(ctx, `DELETE FROM device_metrics WHERE ts < now() - make_interval(days => $1)`, s.conf().MetricsRetentionDays)
 		_, _ = s.db.Exec(ctx, `DELETE FROM device_energy_daily WHERE day < now() - interval '3 years'`)
+		_, _ = s.db.Exec(ctx, `DELETE FROM vsphere_host_power WHERE ts < now() - interval '30 days'`)
 		_, _ = s.db.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
 		_, _ = s.db.Exec(ctx, `UPDATE job_results SET status='timeout', finished_at=now() WHERE status='running' AND started_at < now() - interval '6 hours'`)
 		_, _ = s.db.Exec(ctx, `DELETE FROM audit_log WHERE created_at < now() - interval '365 days'`)

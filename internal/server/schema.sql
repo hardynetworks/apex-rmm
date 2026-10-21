@@ -272,3 +272,73 @@ CREATE TABLE IF NOT EXISTS device_energy_daily (
     PRIMARY KEY (device_id, day)
 );
 CREATE INDEX IF NOT EXISTS device_energy_daily_day ON device_energy_daily (day);
+
+-- vSphere / ESXi connector -------------------------------------------------
+
+-- Alerts that do not belong to an agent device (e.g. vSphere hosts and datastores).
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_key  text NOT NULL DEFAULT '';
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_name text NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS alerts_source_key ON alerts (source_key) WHERE source_key <> '' AND status <> 'resolved';
+
+CREATE TABLE IF NOT EXISTS vsphere_connections (
+    id             text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name           text NOT NULL UNIQUE,
+    url            text NOT NULL,                       -- vCenter / ESXi address
+    username       text NOT NULL,
+    password       text NOT NULL DEFAULT '',            -- encrypted (secretBox)
+    insecure       boolean NOT NULL DEFAULT false,      -- skip TLS verification
+    thumbprint     text NOT NULL DEFAULT '',            -- pinned certificate thumbprint
+    client_id      text REFERENCES clients(id) ON DELETE SET NULL,
+    enabled        boolean NOT NULL DEFAULT true,
+    poll_seconds   int NOT NULL DEFAULT 60,
+    ds_warn_pct    int NOT NULL DEFAULT 85,
+    ds_crit_pct    int NOT NULL DEFAULT 95,
+    snapshot_days  int NOT NULL DEFAULT 3,              -- 0 = do not alert on old snapshots
+    alert_alarms   boolean NOT NULL DEFAULT true,       -- raise vCenter alarms as alerts
+    alert_hosts    boolean NOT NULL DEFAULT true,       -- host disconnected / hardware health
+    create_tickets boolean NOT NULL DEFAULT false,
+    notify         boolean NOT NULL DEFAULT true,
+    status         text NOT NULL DEFAULT 'pending',     -- pending | ok | error
+    last_error     text NOT NULL DEFAULT '',
+    last_poll      timestamptz,
+    about          jsonb NOT NULL DEFAULT '{}',
+    created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+-- Latest inventory snapshot per connection (replaced on every poll).
+CREATE TABLE IF NOT EXISTS vsphere_inventory (
+    connection_id text PRIMARY KEY REFERENCES vsphere_connections(id) ON DELETE CASCADE,
+    data          jsonb NOT NULL,
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- One row per VM per "Deploy agent" run.
+CREATE TABLE IF NOT EXISTS vsphere_deploys (
+    id            text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    batch_id      text NOT NULL,
+    connection_id text NOT NULL REFERENCES vsphere_connections(id) ON DELETE CASCADE,
+    vm_ref        text NOT NULL,
+    vm_name       text NOT NULL DEFAULT '',
+    os_family     text NOT NULL DEFAULT '',
+    status        text NOT NULL DEFAULT 'queued',       -- queued | running | success | failed | skipped
+    message       text NOT NULL DEFAULT '',
+    log           text NOT NULL DEFAULT '',
+    exit_code     int,
+    created_by    text NOT NULL DEFAULT '',
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    started_at    timestamptz,
+    finished_at   timestamptz
+);
+CREATE INDEX IF NOT EXISTS vsphere_deploys_conn ON vsphere_deploys (connection_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS vsphere_deploys_batch ON vsphere_deploys (batch_id);
+
+-- Host power/temperature history from vSphere (kept 30 days).
+CREATE TABLE IF NOT EXISTS vsphere_host_power (
+    connection_id text NOT NULL REFERENCES vsphere_connections(id) ON DELETE CASCADE,
+    host_ref      text NOT NULL,
+    ts            timestamptz NOT NULL DEFAULT now(),
+    watts         real,
+    temp_c        real,
+    fan_min_rpm   real,
+    PRIMARY KEY (connection_id, host_ref, ts)
+);
