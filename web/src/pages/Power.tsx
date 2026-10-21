@@ -19,6 +19,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   nvidia: 'NVIDIA driver',
   hwmon: 'GPU sensor',
   estimate: 'Estimate from CPU load',
+  vsphere: 'VMware vSphere host',
 };
 
 export function fmtW(w: number | null | undefined) {
@@ -82,7 +83,9 @@ export function DevicePower({ d, tech, onSaved }: { d: any; tech: boolean; onSav
     <div class="grid-2">
       <Card title="Power now" icon="bolt">
         {!d.online ? <Empty icon="bolt" title="Device is offline" /> : !hasPower ? (
-          <Empty icon="bolt" title="No power readings yet">{d.energy_conf?.mode === 'off' ? 'Power monitoring is turned off for this device.' : 'Update the agent to start power monitoring (⋯ → Update agent).'}</Empty>
+          <Empty icon="bolt" title={d.type === 'virtual' ? 'Virtual machine' : 'No power readings yet'}>{d.energy_conf?.mode === 'off' ? 'Power monitoring is turned off for this device.'
+            : d.type === 'virtual' ? "A VM's power is part of its host's, so it isn't estimated here (vSphere hosts are counted on the Power card). Choose Estimate in Power settings to estimate it anyway."
+            : 'Update the agent to start power monitoring (⋯ → Update agent).'}</Empty>
         ) : (
           <>
             <div class="power-now">
@@ -197,12 +200,12 @@ export function FleetPowerCard() {
   const n = e.now;
   return (
     <Card title="Power" icon="bolt" class="span-2">
-      {n.devices === 0 && e.top.length === 0 ? (
+      {n.devices === 0 && !n.hosts && e.top.length === 0 ? (
         <Empty icon="bolt" title="No power readings yet">Agents report power after they're updated (device ⋯ → Update agent).</Empty>
       ) : (
         <>
           <div class="energy-totals">
-            <div><span class="muted small">Drawing now</span><strong>{fmtW(n.watts)}</strong><span class="muted small">{n.devices} device{n.devices === 1 ? '' : 's'}{n.measured < n.devices ? ` · ${n.measured} measured` : ''}</span></div>
+            <div><span class="muted small">Drawing now</span><strong>{fmtW(n.watts)}</strong><span class="muted small">{n.devices} device{n.devices === 1 ? '' : 's'}{n.measured < n.devices ? ` · ${n.measured} measured` : ''}{n.hosts ? ` · ${n.hosts} vSphere host${n.hosts === 1 ? '' : 's'}${n.hosts_estimated ? ` (${n.hosts_estimated} est.)` : ''}` : ''}</span></div>
             <div><span class="muted small">Today</span><strong>{fmtKWh(e.today_kwh)}</strong><span class="muted small">{cost(e.today_kwh) || ''}</span></div>
             <div><span class="muted small">This month</span><strong>{fmtKWh(e.month_kwh)}</strong><span class="muted small">{cost(e.month_kwh) || ''}</span></div>
             <div><span class="muted small">Last 30 days</span><strong>{fmtKWh(e.period_kwh)}</strong><span class="muted small">{cost(e.period_kwh) || ''}</span></div>
@@ -224,8 +227,10 @@ export function FleetPowerCard() {
               <thead><tr><th>Device</th><th>Now</th><th>This month</th></tr></thead>
               <tbody>
                 {e.top.map((x: any) => (
-                  <tr key={x.id}>
-                    <td><Link href={`/devices/${x.id}?tab=power`} class="strong">{x.name}</Link> {x.power_kind !== 'measured' && <span class="muted small">{x.power_kind === 'partial' ? 'components' : 'est.'}</span>}</td>
+                  <tr key={x.id || x.connection_id + x.host_ref}>
+                    <td>{x.type === 'vsphere'
+                      ? <><Link href="/virtualization?tab=hosts" class="strong">{x.name}</Link> <span class="muted small">ESXi host{x.power_kind === 'estimate' ? ' · est.' : ''}</span></>
+                      : <><Link href={`/devices/${x.id}?tab=power`} class="strong">{x.name}</Link> {x.power_kind !== 'measured' && <span class="muted small">{x.power_kind === 'partial' ? 'components' : 'est.'}</span>}</>}</td>
                     <td>{x.power_w != null ? fmtW(x.power_w) : <span class="muted">—</span>}</td>
                     <td>{fmtKWh(x.month_kwh)} <span class="muted small">{cost(x.month_kwh) || ''}</span></td>
                   </tr>

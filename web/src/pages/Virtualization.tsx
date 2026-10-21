@@ -160,13 +160,12 @@ const tempTone = (st: string) => (st === 'red' ? 'text-crit' : st === 'yellow' ?
 function Hosts({ hosts, connId }: { hosts: any[]; connId: string }) {
   const [open, setOpen] = useState<string | null>(null);
   if (!hosts.length) return <Card><Empty icon="server" title="No hosts" /></Card>;
-  const anyPower = hosts.some((h) => h.power_watts != null);
   const anyHw = hosts.some((h) => h.temp_c != null || h.fans > 0);
   return (
     <Card pad={false}>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Host</th><th>State</th><th class="hide-sm">CPU</th><th class="hide-sm">Memory</th><th>VMs</th>{anyPower && <th>Power</th>}{anyHw && <th class="hide-sm">Temp / fans</th>}<th class="hide-md">Hardware</th><th class="hide-md">ESXi</th><th class="hide-sm">Uptime</th></tr></thead>
+          <thead><tr><th>Host</th><th>State</th><th class="hide-sm">CPU</th><th class="hide-sm">Memory</th><th>VMs</th><th>Power</th>{anyHw && <th class="hide-sm">Temp / fans</th>}<th class="hide-md">Hardware</th><th class="hide-md">ESXi</th><th class="hide-sm">Uptime</th></tr></thead>
           <tbody>
             {hosts.map((h) => (
               <Fragment key={h.ref}>
@@ -178,7 +177,7 @@ function Hosts({ hosts, connId }: { hosts: any[]; connId: string }) {
                         <a href={h.ui_url} target="_blank" rel="noopener noreferrer" class="strong">{h.name} <Icon name="external" size={12} /></a>
                         <div class="muted small">{h.cluster || 'standalone'}</div>
                         {h.sensors?.map((s: any) => <div key={s.name} class={'small ' + (s.state === 'red' ? 'text-crit' : 'text-warn')}><Icon name="alert" size={12} /> {s.name} {s.state}{s.reading ? ` (${s.reading})` : ''}</div>)}
-                        {(h.readings?.length > 0 || h.power_watts != null) && <button class="linklike small" onClick={() => setOpen(open === h.ref ? null : h.ref)}>{open === h.ref ? 'hide hardware details' : 'hardware details'}</button>}
+                        {(h.readings?.length > 0 || h.power_watts != null || h.power_note) && <button class="linklike small" onClick={() => setOpen(open === h.ref ? null : h.ref)}>{open === h.ref ? 'hide hardware details' : 'hardware details'}</button>}
                       </div>
                     </div>
                   </td>
@@ -186,7 +185,11 @@ function Hosts({ hosts, connId }: { hosts: any[]; connId: string }) {
                   <td class="hide-sm">{h.connection_state === 'connected' ? <Meter value={h.cpu_pct} /> : <span class="muted">—</span>}<div class="muted small">{h.cpu_cores} cores · {(h.cpu_mhz / 1000).toFixed(1)} GHz</div></td>
                   <td class="hide-sm">{h.connection_state === 'connected' ? <Meter value={h.mem_pct} /> : <span class="muted">—</span>}<div class="muted small">{fmtBytes(h.mem_total, 0)}</div></td>
                   <td>{h.vms_on}<span class="muted"> / {h.vms}</span></td>
-                  {anyPower && <td class="nowrap">{fmtW(h.power_watts)}{h.power_cap_watts != null && <div class="muted small">cap {Math.round(h.power_cap_watts)} W</div>}</td>}
+                  <td class="nowrap">
+                    {h.power_watts != null
+                      ? <>{fmtW(h.power_watts)}<div class="muted small" title={h.power_source === 'estimate' ? 'No measurement: ' + (h.power_note || '') : ''}>{h.power_source === 'sensor' ? 'power sensor' : h.power_source === 'estimate' ? <span class="linklike-plain">estimated from CPU</span> : 'vSphere counter'}{h.power_cap_watts != null && ` · cap ${Math.round(h.power_cap_watts)} W`}</div></>
+                      : <span class="muted" title={h.power_note || ''}>—<div class="small">{h.connection_state === 'connected' ? <button class="linklike small" onClick={() => setOpen(h.ref)}>not reported</button> : 'offline'}</div></span>}
+                  </td>
                   {anyHw && <td class="hide-sm nowrap">{h.temp_c != null ? `${Math.round(h.temp_c)} °C` : '—'}<div class="muted small">{h.fans > 0 ? `${h.fans} fans · min ${Math.round(h.fan_min_rpm)} RPM` : 'no fan data'}</div></td>}
                   <td class="hide-md small">{h.vendor} {h.model}<div class="muted truncate" title={h.cpu_model}>{h.cpu_model}</div></td>
                   <td class="hide-md small">{h.version}<div class="muted">build {h.build}</div></td>
@@ -215,6 +218,7 @@ function HostHardware({ host, connId }: { host: any; connId: string }) {
         <strong class="grow">{host.name}: power, temperature and fans</strong>
         {[[1, '1h'], [24, '24h'], [168, '7d'], [720, '30d']].map(([h, l]) => <Button key={h} size="sm" variant={hours === h ? 'primary' : 'default'} onClick={() => setHours(h as number)}>{l as string}</Button>)}
       </div>
+      {host.power_note && (host.power_watts == null || host.power_source === 'estimate') && <p class="callout warn small"><Icon name="info" size={14} /><span>No power measurement{host.power_source === 'estimate' ? `, so the ${Math.round(host.power_watts)} W shown is estimated from CPU load` : ''}: {host.power_note}.</span></p>}
       <div class="grid-2">
         {host.power_watts != null || pts.some((p) => p.watts != null) ? <Card title="Power draw (W)"><LineChart data={pts} series={[{ key: 'watts', label: 'Watts', color: 'var(--series-1)' }]} format={(v) => Math.round(v) + ' W'} empty="History builds up as the host is polled" /></Card> : null}
         {pts.some((p) => p.temp_c != null) && <Card title="Hottest sensor (°C)"><LineChart data={pts} series={[{ key: 'temp_c', label: '°C', color: 'var(--series-2)' }]} format={(v) => v.toFixed(0) + ' °C'} /></Card>}

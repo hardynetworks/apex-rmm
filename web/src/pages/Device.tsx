@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
+import { closeDeviceTab, setDeviceTabSub, visitDevice } from '../devtabs';
 import { api } from '../api';
 import { LineChart } from '../chart';
 import { Icon } from '../icons';
@@ -6,6 +7,7 @@ import { Link, navigate, useQuery } from '../router';
 import {
   Badge, Button, Card, CopyText, Empty, ErrorBox, Field, Kv, Meter, Modal, OsBadge, PageHeader, Priority, SearchInput, Severity, Spinner,
   StatusBadge, StatusDot, Tabs, attempt, confirmDialog, deviceName, fmtBytes, fmtDate, fmtUptime, timeAgo, toast, useFetch,
+  DEVICE_TYPES, TYPE_LABEL, typeIcon,
 } from '../ui';
 import { useCan } from '../user';
 import { JobOutput, RunScriptModal } from './Scripts';
@@ -27,6 +29,9 @@ export function DevicePage({ id }: { id: string }) {
   const [rdOpen, setRdOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const [ticketOpen, setTicketOpen] = useState(false);
+  const name = d ? deviceName(d) : '';
+  useEffect(() => { if (d) visitDevice({ id, name, os: d.os, sub: tab }); }, [id, name, d?.os]);
+  useEffect(() => setDeviceTabSub(id, tab), [id, tab]);
 
   if (error) return <div class="page"><ErrorBox msg={error} /></div>;
   if (!d) return <div class="page"><Spinner /></div>;
@@ -42,7 +47,10 @@ export function DevicePage({ id }: { id: string }) {
   const updateAgent = () => attempt(() => api.post(`/devices/${id}/update-agent`), 'Agent update started — it will reconnect shortly');
   const del = async () => {
     if (!(await confirmDialog({ title: `Remove ${deviceName(d)}?`, body: 'The agent will be uninstalled if the device is online, and all history for it is deleted.', confirm: 'Remove device', danger: true }))) return;
-    if (await attempt(() => api.del('/devices/' + id), 'Device removed')) navigate('/devices');
+    if (await attempt(() => api.del('/devices/' + id), 'Device removed')) {
+      closeDeviceTab(id);
+      navigate('/devices');
+    }
   };
   const inMaint = d.maintenance_until && new Date(d.maintenance_until) > new Date();
   const maint = async () => {
@@ -66,7 +74,7 @@ export function DevicePage({ id }: { id: string }) {
       <PageHeader
         back={<Link href="/devices" class="back"><Icon name="chevronLeft" size={16} /> Devices</Link>}
         title={<span class="title-row">{deviceName(d)} <StatusDot online={d.online} /></span>}
-        subtitle={<span class="meta-row"><OsBadge os={d.os} /> <span>{d.platform} {d.os_version}</span> <span>·</span> <span>{d.client_name || 'No client'}{d.site_name ? ' / ' + d.site_name : ''}</span> {inMaint && <Badge tone="warning">Maintenance until {new Date(d.maintenance_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Badge>}</span>}
+        subtitle={<span class="meta-row"><OsBadge os={d.os} /> <span>{d.platform} {d.os_version}</span> <span>·</span> <span class="title-row">{d.type !== 'other' && <Icon name={typeIcon(d.type)} size={14} />} {TYPE_LABEL[d.type] || 'Other'}</span> <span>·</span> <span>{d.client_name || 'No client'}{d.site_name ? ' / ' + d.site_name : ''}</span> {inMaint && <Badge tone="warning">Maintenance until {new Date(d.maintenance_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Badge>}</span>}
         actions={tech && <>
           <Button variant="primary" icon="pointer" disabled={!d.online} onClick={openRemote} title={d.online ? 'Open built-in remote control' : 'Device is offline'}>Remote control</Button>
           <Button icon="link" onClick={() => setRdOpen(true)}>RustDesk</Button>
@@ -116,6 +124,7 @@ function Overview({ d }: { d: any }) {
           <div><span class="muted"><Icon name="cpu" size={15} /> CPU</span><Meter value={d.online ? d.cpu_pct : 0} /></div>
           <div><span class="muted"><Icon name="memory" size={15} /> Memory</span><Meter value={d.online ? d.mem_pct : 0} /></div>
           <div><span class="muted"><Icon name="disk" size={15} /> Fullest disk</span><Meter value={d.disk_pct} /></div>
+          {d.gpu_pct != null && <div><span class="muted"><Icon name="gpu" size={15} /> GPU</span><Meter value={d.gpu_pct} /></div>}
         </div>
         <Kv items={[
           ['Status', d.online ? 'Online' : `Offline — last seen ${timeAgo(d.last_seen)}`],
@@ -145,6 +154,7 @@ function Overview({ d }: { d: any }) {
           ['Enrolled', fmtDate(d.created_at)],
         ]} />
       </Card>
+      {(d.gpus?.length > 0 || inv.gpus?.length > 0) && <GPUCard d={d} names={inv.gpus || []} />}
       <Card title="Storage" icon="disk" pad={false}>
         <table class="table compact">
           <thead><tr><th>Volume</th><th>Size</th><th>Used</th></tr></thead>
@@ -171,6 +181,40 @@ function Overview({ d }: { d: any }) {
   );
 }
 
+const fmtTemp = (c: number) => (c >= 0 ? Math.round(c) + ' °C' : '—');
+
+/** Each graphics adapter's load, video memory, temperature, fan, clocks and power. */
+function GPUCard({ d, names }: { d: any; names: string[] }) {
+  const gpus: any[] = d.gpus?.length ? d.gpus : names.map((n) => ({ name: n, load: -1, temp: -1, fan: -1, w: -1 }));
+  return (
+    <Card title={gpus.length > 1 ? `GPUs (${gpus.length})` : 'GPU'} icon="gpu" class={gpus.length > 1 ? 'span-2' : ''}>
+      <div class="gpu-list">
+        {gpus.map((g, i) => (
+          <div key={i} class="gpu">
+            <div class="strong">{g.name}</div>
+            {!d.online ? <div class="muted small">Device is offline</div> : !d.gpus?.length ? <div class="muted small">No live data: update the agent (⋯ → Update agent).</div> : (
+              <>
+                <div class="health">
+                  <div><span class="muted">Load</span>{g.load >= 0 ? <Meter value={g.load} /> : <span class="muted small">not reported</span>}</div>
+                  <div><span class="muted">{g.shared ? 'Shared memory' : 'Video memory'}</span>{g.mem_total > 0 ? <Meter value={(g.mem_used / g.mem_total) * 100} /> : g.mem_used > 0 ? <span>{fmtBytes(g.mem_used)}</span> : <span class="muted small">not reported</span>}</div>
+                </div>
+                <Kv items={[
+                  ...(g.mem_total > 0 || g.mem_used > 0 ? [['Memory', `${fmtBytes(g.mem_used || 0)}${g.mem_total ? ' of ' + fmtBytes(g.mem_total) : ''}`] as [string, any]] : []),
+                  ...(g.temp >= 0 ? [['Temperature', <span class={g.temp >= 85 ? 'text-crit' : g.temp >= 75 ? 'text-warn' : ''}>{fmtTemp(g.temp)}</span>] as [string, any]] : []),
+                  ...(g.fan >= 0 ? [['Fan', Math.round(g.fan) + ' %'] as [string, any]] : []),
+                  ...(g.clock ? [['Clock', `${Math.round(g.clock)} MHz${g.mem_clock ? ` · memory ${Math.round(g.mem_clock)} MHz` : ''}`] as [string, any]] : []),
+                  ...(g.w >= 0 ? [['Power', fmtW(g.w)] as [string, any]] : []),
+                  ['Read with', { 'nvidia-smi': 'NVIDIA driver (nvidia-smi)', sysfs: 'Linux driver (sysfs)', pdh: 'Windows performance counters', ioreg: 'macOS IOKit' }[g.src as string] || g.src || '—'],
+                ]} />
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function Performance({ id }: { id: string }) {
   const [hours, setHours] = useState(24);
   const { data, loading } = useFetch<any[]>(`/devices/${id}/metrics?hours=${hours}`, [], 60000);
@@ -191,6 +235,8 @@ function Performance({ id }: { id: string }) {
           <Card title="Memory usage" icon="memory"><LineChart data={data || []} series={[{ key: 'mem', label: 'Memory', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>
           <Card title="Disk usage (fullest volume)" icon="disk"><LineChart data={data || []} series={[{ key: 'disk', label: 'Disk', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>
           <Card title="Network throughput" icon="network"><LineChart data={data || []} series={[{ key: 'net_rx', label: 'Received', color: SERIES_BLUE }, { key: 'net_tx', label: 'Sent', color: SERIES_ORANGE }]} format={rate} /></Card>
+          {(data || []).some((p) => p.gpu != null) && <Card title="GPU usage (busiest GPU)" icon="gpu"><LineChart data={data || []} series={[{ key: 'gpu', label: 'GPU', color: SERIES_BLUE }]} yMax={100} format={pct} /></Card>}
+          {(data || []).some((p) => p.gpu_mem != null) && <Card title="Video memory (fullest GPU)" icon="gpu"><LineChart data={data || []} series={[{ key: 'gpu_mem', label: 'Video memory', color: SERIES_ORANGE }]} yMax={100} format={pct} /></Card>}
         </div>
       )}
     </>
@@ -200,8 +246,15 @@ function Performance({ id }: { id: string }) {
 function Processes({ id, online }: { id: string; online: boolean }) {
   const { data, error, loading, reload } = useFetch<any[]>(online ? `/devices/${id}/processes` : null);
   const [s, setS] = useState('');
-  const rows = useMemo(() => (data || []).filter((p) => !s || (p.name + ' ' + p.user + ' ' + p.cmdline + ' ' + p.pid).toLowerCase().includes(s.toLowerCase())), [data, s]);
+  const [sort, setSort] = useState<'mem' | 'cpu' | 'gpu'>('mem');
+  const rows = useMemo(() => {
+    const r = (data || []).filter((p) => !s || (p.name + ' ' + p.user + ' ' + p.cmdline + ' ' + p.pid).toLowerCase().includes(s.toLowerCase()));
+    const key = (p: any) => (sort === 'cpu' ? p.cpu : sort === 'gpu' ? (p.gpu || 0) * 1e12 + (p.gpu_mem || 0) : p.mem_rss);
+    return [...r].sort((a, b) => key(b) - key(a));
+  }, [data, s, sort]);
+  const anyGPU = (data || []).some((p) => p.gpu > 0 || p.gpu_mem > 0);
   if (!online) return <Card><Empty icon="list" title="Device is offline" /></Card>;
+  const th = (k: 'mem' | 'cpu' | 'gpu', label: string) => <th><button class={'th-sort' + (sort === k ? ' active' : '')} onClick={() => setSort(k)}>{label}{sort === k ? ' ↓' : ''}</button></th>;
   const kill = async (p: any) => {
     if (!(await confirmDialog({ title: `End ${p.name} (PID ${p.pid})?`, confirm: 'End process', danger: true }))) return;
     if (await attempt(() => api.post(`/devices/${id}/processes/${p.pid}/kill`), 'Process ended')) reload(true);
@@ -212,11 +265,13 @@ function Processes({ id, online }: { id: string; online: boolean }) {
       {loading && !data ? <Spinner label="Asking the agent…" /> : (
         <div class="table-wrap tall">
           <table class="table compact">
-            <thead><tr><th>Name</th><th>PID</th><th>User</th><th>CPU</th><th>Memory</th><th class="hide-md">Command</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>PID</th><th>User</th>{th('cpu', 'CPU')}{th('mem', 'Memory')}{anyGPU && th('gpu', 'GPU')}{anyGPU && <th class="hide-sm">GPU memory</th>}<th class="hide-md">Command</th><th /></tr></thead>
             <tbody>
               {rows.slice(0, 500).map((p) => (
                 <tr key={p.pid}>
                   <td class="strong">{p.name}</td><td class="mono">{p.pid}</td><td class="truncate">{p.user}</td><td>{p.cpu.toFixed(1)}%</td><td>{fmtBytes(p.mem_rss)}</td>
+                  {anyGPU && <td>{p.gpu ? p.gpu.toFixed(1) + '%' : <span class="muted">—</span>}</td>}
+                  {anyGPU && <td class="hide-sm">{p.gpu_mem ? fmtBytes(p.gpu_mem) : <span class="muted">—</span>}</td>}
                   <td class="hide-md mono small truncate" title={p.cmdline}>{p.cmdline}</td>
                   <td><Button size="sm" variant="ghost" icon="x" title="End process" onClick={() => kill(p)} /></td>
                 </tr>
@@ -352,11 +407,13 @@ function DeviceSettings({ d, onSaved }: { d: any; onSaved: (d: any) => void }) {
   const [tags, setTags] = useState((d.tags || []).join(', '));
   const [clientId, setClientId] = useState(d.client_id || '');
   const [siteId, setSiteId] = useState(d.site_id || '');
+  const [dtype, setDtype] = useState(d.device_type || '');
   const [busy, setBusy] = useState(false);
+  const detected = d.inventory?.chassis || '';
   const sites = clients.data?.find((c) => c.id === clientId)?.sites || [];
   const save = async () => {
     setBusy(true);
-    const body: any = { display_name: name, notes, tags: tags.split(',').map((t: string) => t.trim()).filter(Boolean) };
+    const body: any = { display_name: name, notes, device_type: dtype, tags: tags.split(',').map((t: string) => t.trim()).filter(Boolean) };
     if (clientId !== d.client_id) body.client_id = clientId;
     body.site_id = siteId;
     await attempt(async () => onSaved(await api.patch('/devices/' + d.id, body)));
@@ -366,6 +423,12 @@ function DeviceSettings({ d, onSaved }: { d: any; onSaved: (d: any) => void }) {
     <Card title="Device details">
       <div class="form-grid">
         <Field label="Display name" hint={`Leave blank to use the hostname (${d.hostname})`}><input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} /></Field>
+        <Field label="Type" hint="Groups the device on the Devices page">
+          <select value={dtype} onChange={(e) => setDtype((e.target as HTMLSelectElement).value)}>
+            <option value="">Detected{detected ? ` (${TYPE_LABEL[detected] || detected})` : ' (unknown → Other)'}</option>
+            {DEVICE_TYPES.map(([v]) => <option key={v} value={v}>{TYPE_LABEL[v]}</option>)}
+          </select>
+        </Field>
         <Field label="Tags" hint="Comma separated"><input value={tags} onInput={(e) => setTags((e.target as HTMLInputElement).value)} /></Field>
         <Field label="Client"><select value={clientId} onChange={(e) => { setClientId((e.target as HTMLSelectElement).value); setSiteId(''); }}>{clients.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
         <Field label="Site"><select value={siteId} onChange={(e) => setSiteId((e.target as HTMLSelectElement).value)}><option value="">—</option>{sites.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
