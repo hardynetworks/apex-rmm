@@ -697,3 +697,35 @@ func sensorPower(rs []Reading) (float64, bool) {
 	}
 	return 0, false
 }
+
+// HostPower reads just what the energy page needs (each host's power, CPU use and sensors),
+// much lighter than Collect, so it can run every 20 seconds while someone watches the page.
+func (c *Conn) HostPower(ctx context.Context) ([]Host, error) {
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	vc := c.c.Client
+	v, err := view.NewManager(vc).CreateContainerView(ctx, vc.ServiceContent.RootFolder, []string{"HostSystem"}, true)
+	if err != nil {
+		return nil, fmt.Errorf("create host view: %w", cleanErr(err))
+	}
+	defer v.Destroy(context.Background())
+	var mos []mo.HostSystem
+	if err := v.Retrieve(ctx, []string{"HostSystem"}, []string{"name", "runtime", "summary.hardware", "summary.quickStats"}, &mos); err != nil {
+		return nil, fmt.Errorf("read hosts: %w", cleanErr(err))
+	}
+	hosts := make([]Host, 0, len(mos))
+	for _, h := range mos {
+		out := Host{Ref: h.Self.Value, Name: h.Name, ConnectionState: string(h.Runtime.ConnectionState), PowerState: string(h.Runtime.PowerState)}
+		if hw := h.Summary.Hardware; hw != nil {
+			out.Vendor, out.Model, out.CPUModel = hw.Vendor, hw.Model, hw.CpuModel
+			out.CPUMhz, out.CPUCores, out.CPUThreads, out.MemTotal = hw.CpuMhz, hw.NumCpuCores, hw.NumCpuThreads, hw.MemorySize
+		}
+		out.CPUUsedMhz = h.Summary.QuickStats.OverallCpuUsage
+		out.MemUsedMB = h.Summary.QuickStats.OverallMemoryUsage
+		out.Readings = hostReadings(h.Runtime)
+		hosts = append(hosts, out)
+	}
+	sort.Slice(hosts, func(i, j int) bool { return hosts[i].Name < hosts[j].Name })
+	c.addHostPower(ctx, hosts)
+	return hosts, nil
+}

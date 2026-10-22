@@ -90,6 +90,16 @@ func TestProbeAndCollect(t *testing.T) {
 			t.Fatalf("host %s: want an estimate with a note, got %v %q %q", h.Name, h.PowerWatts, h.PowerSource, h.PowerNote)
 		}
 	}
+	// the energy page's light read gives the same hosts and power
+	hp, err := c.HostPower(ctx)
+	if err != nil || len(hp) != len(inv.Hosts) {
+		t.Fatalf("HostPower: %v, %d hosts (want %d)", err, len(hp), len(inv.Hosts))
+	}
+	for _, h := range hp {
+		if h.Name == "" || h.PowerWatts == nil || h.CPUCores == 0 {
+			t.Fatalf("HostPower host looks empty: %+v", h)
+		}
+	}
 }
 
 func TestPowerActions(t *testing.T) {
