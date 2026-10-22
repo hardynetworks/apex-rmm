@@ -78,6 +78,7 @@ func (m *vsphereMgr) readHostPower(ctx context.Context, c *vsConn) ([]vsphere.Ho
 		m.dropSessionOnly(c.ID)
 		return nil, err
 	}
+	m.s.mt.applyHostPlugs(c.ID, hosts)
 	// The readings also go into the history and the daily kWh totals.
 	m.s.recordHostPower(ctx, c.ID, &vsphere.Inventory{Hosts: hosts}, int(liveEvery/time.Second))
 	return hosts, nil

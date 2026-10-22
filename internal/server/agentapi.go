@@ -147,6 +147,7 @@ func (s *Server) updateInventory(ctx context.Context, id string, inv *proto.Inve
 }
 
 func (s *Server) recordMetrics(ctx context.Context, id string, m *proto.Metrics) {
+	m.Energy = s.mt.devicePlugEnergy(id, m.Energy) // a Matter plug's measurement wins
 	users := nz(m.Users)
 	_, err := s.db.Exec(ctx, `UPDATE devices SET cpu_pct=$2, mem_pct=$3, disk_pct=$4, last_seen=now(), online=true, logged_in_users=$5,
 		inventory = jsonb_set(inventory, '{disks}', $6::jsonb) WHERE id=$1`, id, m.CPU, m.Mem, m.Disk, users, mustJSON(m.Disks))

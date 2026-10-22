@@ -204,6 +204,7 @@ func (m *vsphereMgr) poll(ctx context.Context, id string) error {
 		m.fail(ctx, c, err)
 		return err
 	}
+	m.s.mt.applyHostPlugs(id, inv.Hosts)
 	raw, _ := json.Marshal(inv)
 	about, _ := json.Marshal(inv.About)
 	tx, err := m.s.db.Begin(ctx)

@@ -28,6 +28,7 @@ type Server struct {
 	auth      *Auth
 	hub       *Hub
 	vs        *vsphereMgr
+	mt        *matterMgr
 }
 
 // conf returns the current effective configuration.
@@ -46,6 +47,7 @@ func New(ctx context.Context, cfg *Config) (*Server, error) {
 	}
 	s.hub = newHub(s)
 	s.vs = newVsphereMgr(s)
+	s.mt = newMatterMgr(s)
 	s.auth = newAuth(s)
 	go s.auth.reloadWithRetry(ctx)
 	if s.setupNeeded(ctx) {
@@ -69,6 +71,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.schedulerLoop(ctx)
 	go s.cleanupLoop(ctx)
 	go s.vs.loop(ctx)
+	s.mt.start(ctx)
 	srv := &http.Server{Addr: s.conf().Listen, Handler: s.routes(), ReadHeaderTimeout: 15 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -142,6 +145,7 @@ func (s *Server) routes() http.Handler {
 			r.Get("/vsphere/connections/{id}/hosts/{ref}/power", s.vsphereHostPower)
 			r.Get("/vsphere/connections/{id}/energy", s.vsphereEnergy)
 			r.Get("/vsphere/connections/{id}/power-history", s.vsphereEnergyHistory)
+			r.Get("/matter", s.getMatter)
 
 			// technician+
 			r.Group(func(r chi.Router) {
@@ -210,6 +214,11 @@ func (s *Server) routes() http.Handler {
 				r.Post("/vsphere/test", s.testVSphere)
 				r.Post("/vsphere/connections/{id}/deploy", s.deployVSphere)
 				r.Get("/audit", s.listAudit)
+				r.Put("/matter/settings", s.putMatterSettings)
+				r.Post("/matter/plugs", s.addMatterPlug)
+				r.Patch("/matter/plugs/{node}", s.updateMatterPlug)
+				r.Post("/matter/plugs/{node}/power", s.matterPlugPower)
+				r.Delete("/matter/plugs/{node}", s.deleteMatterPlug)
 				r.Delete("/tickets/{id}", s.deleteTicket)
 			})
 		})

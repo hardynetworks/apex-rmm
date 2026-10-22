@@ -363,3 +363,13 @@ CREATE TABLE IF NOT EXISTS vsphere_host_energy_daily (
 );
 CREATE INDEX IF NOT EXISTS vsphere_host_energy_daily_day ON vsphere_host_energy_daily (day);
 ALTER TABLE vsphere_host_energy_daily ADD COLUMN IF NOT EXISTS est_wh double precision NOT NULL DEFAULT 0; -- from CPU-load estimates
+
+-- Matter smart plugs (through a Matter controller) and what each one powers -------------
+CREATE TABLE IF NOT EXISTS matter_plugs (
+    node_id    bigint PRIMARY KEY,                                   -- node id on the Matter fabric
+    name       text NOT NULL DEFAULT '',
+    device_id  text REFERENCES devices(id) ON DELETE SET NULL,      -- an agent device, or
+    vs_conn    text REFERENCES vsphere_connections(id) ON DELETE SET NULL, -- a vSphere host
+    host_ref   text NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now()
+);
