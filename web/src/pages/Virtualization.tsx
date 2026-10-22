@@ -2,6 +2,7 @@ import { Fragment } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { api } from '../api';
 import { Icon } from '../icons';
+import { HostEnergy } from './HostEnergy';
 import { Link, navigate, useQuery } from '../router';
 import { Badge, Button, Card, Empty, ErrorBox, Field, Meter, Modal, PageHeader, SearchInput, Spinner, Tabs, attempt, confirmDialog, fmtBytes, fmtDate, timeAgo, toast, useFetch } from '../ui';
 import { useCan } from '../user';
@@ -71,6 +72,7 @@ export function Virtualization() {
   const tabs = [
     { id: 'vms', label: 'Virtual machines', icon: 'box' },
     { id: 'hosts', label: 'Hosts', icon: 'server' },
+    { id: 'energy', label: 'Energy', icon: 'bolt' },
     { id: 'datastores', label: 'Datastores', icon: 'disk' },
     { id: 'alarms', label: 'Alarms', icon: 'bell' },
     { id: 'deploys', label: 'Agent deployments', icon: 'download' },
@@ -123,6 +125,7 @@ function Inventory({ conn, tab, tech, admin, onConn }: { conn: any; tab: string;
   };
 
   if (tab === 'deploys') return <Deploys conn={conn} />;
+  if (tab === 'energy') return <HostEnergy conn={conn} />;
   if (error) return <ErrorBox msg={error} />;
   if (loading && !data) return <Spinner />;
   if (!inv) {
