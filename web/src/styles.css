@@ -659,3 +659,8 @@ details[open] summary { margin-bottom: 8px; }
 .host-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .share-bar { display: inline-block; vertical-align: middle; width: 80px; height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-right: 8px; }
 .share-bar > div { height: 100%; border-radius: 999px; }
+
+/* smart plugs */
+.plug-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.plug-row > div:first-child { flex: 1; min-width: 160px; }
+.inline-edit { padding: 4px 8px; font: inherit; font-weight: 600; width: 100%; max-width: 260px; }
