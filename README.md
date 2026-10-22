@@ -409,3 +409,7 @@ Patch management (Windows Update / apt / softwareupdate), Wayland capture via Pi
 ## VMware vSphere
 
 Connect vCenter under **Virtualization** to monitor hosts/VMs/datastores, get alerts, power VMs on and off and push the agent into guests via VMware Tools. See [docs/VSPHERE.md](docs/VSPHERE.md).
+
+## Matter smart plugs
+
+Pair Matter smart plugs under **Settings → Smart plugs** (with `docker compose --profile matter up -d`) and assign each to a device or an ESXi host: plugs that measure power replace its power reading, and admins can power cycle what a plug feeds. See [docs/MATTER.md](docs/MATTER.md).

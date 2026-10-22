@@ -7,7 +7,8 @@
 #
 # A .env file is optional: any variable from .env.example set there overrides
 # the dashboard setting and locks that field.
-# Add "--profile caddy" to also run Caddy with automatic HTTPS.
+# Add "--profile caddy" to also run Caddy with automatic HTTPS, and
+# "--profile matter" to run the Matter controller for Matter smart plugs (docs/MATTER.md).
 
 name: apex-rmm
 
@@ -70,6 +71,9 @@ services:
     volumes:
       - secrets:/secrets:ro
       - rustdesk:/rustdesk:ro
+    extra_hosts:
+      # lets Apex reach services on the host, such as the Matter server
+      - "host.docker.internal:host-gateway"
 
   # ---- RustDesk self-hosted server (backup remote access) ----
   hbbs:
@@ -96,6 +100,21 @@ services:
       - "21117:21117"
       - "21119:21119"
 
+  # ---- optional Matter controller for Matter smart plugs ----
+  # docker compose --profile matter up -d   (then Settings → Smart plugs in Apex)
+  # Matter needs the host's network for mDNS discovery. It listens only on the Docker host
+  # gateway (Apex reaches it as host.docker.internal), not on your LAN; set MATTER_LISTEN in
+  # .env if your docker0 bridge isn't 172.17.0.1.
+  matter:
+    image: ghcr.io/matter-js/matterjs-server:stable
+    profiles: ["matter"]
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      LISTEN_ADDRESS: ${MATTER_LISTEN:-172.17.0.1}
+    volumes:
+      - matter:/data
+
   # ---- optional reverse proxy with automatic Let's Encrypt ----
   caddy:
     image: caddy:2-alpine
@@ -117,3 +136,4 @@ volumes:
   secrets:
   rustdesk:
   caddy:
+  matter:
