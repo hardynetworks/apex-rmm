@@ -12,7 +12,7 @@ import { fmtKWh, fmtW } from './Power';
 
 const HOST_COLORS = ['#00d4ff', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#84cc16'];
 const WINDOWS: [number, string][] = [[120, '2 min'], [600, '10 min'], [3600, '1 hour']];
-const SOURCE: Record<string, string> = { counter: 'vSphere power counter', sensor: 'IPMI power sensor', estimate: 'Estimated from CPU load' };
+const SOURCE: Record<string, string> = { counter: 'vSphere power counter', sensor: 'IPMI power sensor', plug: 'Matter smart plug', estimate: 'Estimated from CPU load' };
 
 type Point = { ts: string; t: number; total: number; [ref: string]: any };
 

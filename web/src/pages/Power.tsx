@@ -4,6 +4,7 @@ import { BarChart, LineChart } from '../chart';
 import { Icon } from '../icons';
 import { Link } from '../router';
 import { Badge, Button, Card, Empty, Field, Kv, Spinner, attempt, useFetch } from '../ui';
+import { DevicePlugCard } from './SmartPlugs';
 
 // Power monitoring: what each device draws, its daily kWh, and the cost at the configured rate.
 
@@ -20,6 +21,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   hwmon: 'GPU sensor',
   estimate: 'Estimate from CPU load',
   vsphere: 'VMware vSphere host',
+  matter: 'Matter smart plug',
 };
 
 export function fmtW(w: number | null | undefined) {
@@ -107,6 +109,7 @@ export function DevicePower({ d, tech, onSaved }: { d: any; tech: boolean; onSav
           </>
         )}
       </Card>
+      <DevicePlugCard deviceId={d.id} />
       <Card title="Energy use" icon="activity" actions={
         <div class="seg">{[[7, '7d'], [30, '30d'], [90, '90d']].map(([n, l]) => <button key={n} class={days === n ? 'active' : ''} onClick={() => setDays(n as number)}>{l}</button>)}</div>
       }>

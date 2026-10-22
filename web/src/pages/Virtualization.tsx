@@ -190,7 +190,7 @@ function Hosts({ hosts, connId }: { hosts: any[]; connId: string }) {
                   <td>{h.vms_on}<span class="muted"> / {h.vms}</span></td>
                   <td class="nowrap">
                     {h.power_watts != null
-                      ? <>{fmtW(h.power_watts)}<div class="muted small" title={h.power_source === 'estimate' ? 'No measurement: ' + (h.power_note || '') : ''}>{h.power_source === 'sensor' ? 'power sensor' : h.power_source === 'estimate' ? <span class="linklike-plain">estimated from CPU</span> : 'vSphere counter'}{h.power_cap_watts != null && ` · cap ${Math.round(h.power_cap_watts)} W`}</div></>
+                      ? <>{fmtW(h.power_watts)}<div class="muted small" title={h.power_source === 'estimate' ? 'No measurement: ' + (h.power_note || '') : ''}>{h.power_source === 'sensor' ? 'power sensor' : h.power_source === 'plug' ? 'Matter smart plug' : h.power_source === 'estimate' ? <span class="linklike-plain">estimated from CPU</span> : 'vSphere counter'}{h.power_cap_watts != null && ` · cap ${Math.round(h.power_cap_watts)} W`}</div></>
                       : <span class="muted" title={h.power_note || ''}>—<div class="small">{h.connection_state === 'connected' ? <button class="linklike small" onClick={() => setOpen(h.ref)}>not reported</button> : 'offline'}</div></span>}
                   </td>
                   {anyHw && <td class="hide-sm nowrap">{h.temp_c != null ? `${Math.round(h.temp_c)} °C` : '—'}<div class="muted small">{h.fans > 0 ? `${h.fans} fans · min ${Math.round(h.fan_min_rpm)} RPM` : 'no fan data'}</div></td>}
