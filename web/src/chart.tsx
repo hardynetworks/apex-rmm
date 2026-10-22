@@ -31,7 +31,7 @@ export function LineChart({ data, series, height = 180, yMax, format = (v) => v.
   const y = (v: number) => pad.t + ih - (Math.min(v, nice) / nice) * ih;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * nice);
   const xticks = 5;
-  const tfmt = span > 2 * 86400e3 ? { month: 'short', day: 'numeric' } : { hour: '2-digit', minute: '2-digit' };
+  const tfmt = span > 2 * 86400e3 ? { month: 'short', day: 'numeric' } : span < 15 * 60e3 ? { hour: '2-digit', minute: '2-digit', second: '2-digit' } : { hour: '2-digit', minute: '2-digit' };
 
   const onMove = (e: MouseEvent) => {
     const r = (e.currentTarget as SVGElement).getBoundingClientRect();
@@ -81,7 +81,7 @@ export function LineChart({ data, series, height = 180, yMax, format = (v) => v.
       </svg>
       {hd && (
         <div class="chart-tip" style={{ left: Math.min(hx + 12, w - 170) + 'px', top: '8px' }}>
-          <div class="muted">{new Date(hd.ts).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</div>
+          <div class="muted">{new Date(hd.ts).toLocaleString(undefined, { dateStyle: 'short', timeStyle: span < 15 * 60e3 ? 'medium' : 'short' })}</div>
           {series.map((s) => (
             <div key={s.key} class="tip-row">
               <span class="swatch" style={{ background: s.color }} />

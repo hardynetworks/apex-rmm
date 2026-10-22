@@ -642,3 +642,20 @@ details[open] summary { margin-bottom: 8px; }
 .dev-tabs-clear:hover { color: var(--text); }
 @media (max-width: 900px) { .dev-tab { max-width: 160px; height: 34px; } .dev-tabs-clear { display: none; } }
 .linklike-plain { border-bottom: 1px dotted currentColor; cursor: help; }
+
+/* Virtualization → Energy */
+.energy-bar { margin-bottom: 12px; }
+.live-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--good-soft); color: var(--good); font-size: 13px; font-weight: 600; }
+.live-pill.stale { background: var(--warning-soft); color: var(--warning); }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 0 currentColor; animation: live-pulse 2s infinite; }
+@keyframes live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.energy-hero { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.energy-hero > div { background: var(--surface); border: 1px solid var(--border); }
+.energy-hero strong { font-size: 22px; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tabnum { font-variant-numeric: tabular-nums; }
+.energy-table td:first-child { min-width: 170px; }
+.energy-table tfoot td { border-top: 2px solid var(--border-strong); background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.host-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.share-bar { display: inline-block; vertical-align: middle; width: 80px; height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-right: 8px; }
+.share-bar > div { height: 100%; border-radius: 999px; }
