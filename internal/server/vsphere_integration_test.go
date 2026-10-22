@@ -325,6 +325,41 @@ func TestVSphereEndToEnd(t *testing.T) {
 		}
 	}
 
+	// energy page: a live power reading per host (the simulator's hosts are estimated), cached
+	// for 20 s, and the raw history for the live chart
+	{
+		code, em, eraw := e.do("viewer", "GET", "/api/vsphere/connections/"+id+"/energy", nil)
+		hs, _ := em["hosts"].([]any)
+		if code != 200 || em["live"] != true || len(hs) == 0 {
+			t.Fatalf("energy: %d %.400s", code, eraw)
+		}
+		for _, x := range hs {
+			h := x.(map[string]any)
+			if h["watts"] == nil || h["source"] != "estimate" || h["note"] == "" || h["name"] == "" {
+				t.Errorf("energy host: %v", h)
+			}
+		}
+		if n, _ := em["next_ms"].(float64); n <= 0 || n > 20000 {
+			t.Errorf("next_ms = %v", em["next_ms"])
+		}
+		if mh, _ := em["month_hours_left"].(float64); mh <= 0 || mh > 31*24 {
+			t.Errorf("month_hours_left = %v", em["month_hours_left"])
+		}
+		_, em2, _ := e.do("viewer", "GET", "/api/vsphere/connections/"+id+"/energy", nil)
+		if em2["at"] != em["at"] {
+			t.Errorf("second request within 20 s should use the cached reading: %v vs %v", em2["at"], em["at"])
+		}
+		code, _, hraw := e.do("viewer", "GET", "/api/vsphere/connections/"+id+"/power-history?minutes=10", nil)
+		var hist []map[string]any
+		_ = json.Unmarshal(hraw, &hist)
+		if code != 200 || len(hist) < len(hs) {
+			t.Errorf("power history: %d %d rows", code, len(hist))
+		}
+		if c, _, _ := e.do("viewer", "GET", "/api/vsphere/connections/nope/energy", nil); c != 404 {
+			t.Errorf("unknown connection: %d", c)
+		}
+	}
+
 	// power: technician ok, viewer forbidden
 	ref, name := "", ""
 	for _, v := range vms {

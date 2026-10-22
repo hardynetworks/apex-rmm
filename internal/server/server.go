@@ -140,6 +140,8 @@ func (s *Server) routes() http.Handler {
 			r.Get("/vsphere/connections/{id}/inventory", s.vsphereInventory)
 			r.Get("/vsphere/connections/{id}/deploys", s.listVSphereDeploys)
 			r.Get("/vsphere/connections/{id}/hosts/{ref}/power", s.vsphereHostPower)
+			r.Get("/vsphere/connections/{id}/energy", s.vsphereEnergy)
+			r.Get("/vsphere/connections/{id}/power-history", s.vsphereEnergyHistory)
 
 			// technician+
 			r.Group(func(r chi.Router) {
