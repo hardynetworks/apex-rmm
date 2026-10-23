@@ -332,7 +332,9 @@ Optionally, clear out old build layers afterwards: `docker image prune -f`.
 
 ### Backups
 
-Everything lives in three Docker volumes: `apex-rmm_db` (database), `apex-rmm_secrets` (database password and the key that decrypts saved secrets such as the SSO client secret) and `apex-rmm_rustdesk` (RustDesk key pair). Back up all three. Without the secrets backup, a restored server still works, but you'd have to re-enter the SSO client secret in Settings.
+**Built in (recommended):** Settings → Backups backs up to any S3-compatible bucket (AWS S3, Cloudflare R2, Backblaze B2, Wasabi, MinIO) every night and on demand, encrypted with a passphrase you choose, and restores from Settings or from the setup wizard of a fresh install. That is also the easiest way to move Apex to another server. See [docs/BACKUP.md](docs/BACKUP.md).
+
+**By hand:** everything lives in three Docker volumes: `apex-rmm_db` (database), `apex-rmm_secrets` (database password and the key that decrypts saved secrets such as the SSO client secret) and `apex-rmm_rustdesk` (RustDesk key pair). Back up all three. Without the secrets backup, a restored server still works, but you'd have to re-enter the SSO client secret in Settings.
 
 ```bash
 cd /opt/apex-rmm
