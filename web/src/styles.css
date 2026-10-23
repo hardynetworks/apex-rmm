@@ -663,4 +663,5 @@ details[open] summary { margin-bottom: 8px; }
 /* smart plugs */
 .plug-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .plug-row > div:first-child { flex: 1; min-width: 160px; }
+.plug-error { max-width: 340px; white-space: normal; margin-top: 2px; }
 .inline-edit { padding: 4px 8px; font: inherit; font-weight: 600; width: 100%; max-width: 260px; }
