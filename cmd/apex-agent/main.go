@@ -76,6 +76,8 @@ func main() {
 			log.Printf("desktop session ended: %v", err)
 			os.Exit(1)
 		}
+	case "adl": // AMD GPU sensors as JSON (Windows; run by the service in the user's session)
+		os.Exit(agent.PrintADL())
 	case "version", "--version", "-v":
 		fmt.Println(proto.Version)
 	default:
