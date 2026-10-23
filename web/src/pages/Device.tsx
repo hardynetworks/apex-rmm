@@ -14,6 +14,7 @@ import { JobOutput, RunScriptModal } from './Scripts';
 import { TerminalView } from './Terminal';
 import { NewTicketModal } from './Tickets';
 import { DevicePower, KindBadge, fmtW } from './Power';
+import { DeviceVMTab, useDeviceVM } from './VMManage';
 
 const SERIES_BLUE = 'var(--series-1)';
 const SERIES_ORANGE = 'var(--series-2)';
@@ -29,6 +30,7 @@ export function DevicePage({ id }: { id: string }) {
   const [rdOpen, setRdOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const [ticketOpen, setTicketOpen] = useState(false);
+  const vmInfo = useDeviceVM(id);
   const name = d ? deviceName(d) : '';
   useEffect(() => { if (d) visitDevice({ id, name, os: d.os, sub: tab }); }, [id, name, d?.os]);
   useEffect(() => setDeviceTabSub(id, tab), [id, tab]);
@@ -62,6 +64,7 @@ export function DevicePage({ id }: { id: string }) {
     { id: 'overview', label: 'Overview', icon: 'info' },
     { id: 'performance', label: 'Performance', icon: 'activity' },
     { id: 'power', label: 'Power', icon: 'bolt' },
+    ...(vmInfo.vm ? [{ id: 'vm', label: 'Virtual machine', icon: 'box' }] : []),
     ...(tech ? [{ id: 'terminal', label: 'Terminal', icon: 'terminal' }, { id: 'processes', label: 'Processes', icon: 'list' }, { id: 'services', label: 'Services', icon: 'server' }, { id: 'software', label: 'Software', icon: 'box' }] : []),
     { id: 'scripts', label: 'History', icon: 'code' },
     { id: 'alerts', label: 'Alerts', icon: 'bell', count: d.open_alerts },
@@ -96,10 +99,14 @@ export function DevicePage({ id }: { id: string }) {
           </div>
         </>}
       />
+      {!d.online && vmInfo.vm && tab !== 'vm' && (
+        <p class="callout small"><Icon name="info" size={14} /><span>This device is the vSphere VM <strong>{vmInfo.vm.name}</strong>, which is {vmInfo.vm.power_state === 'poweredOn' ? 'running' : vmInfo.vm.power_state === 'suspended' ? 'suspended' : 'powered off'}. <button class="linklike" onClick={() => setTab('vm')}>Open the Virtual machine tab</button> to power it on, reset it or revert a snapshot.</span></p>
+      )}
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === 'overview' && <Overview d={d} />}
       {tab === 'performance' && <Performance id={id} />}
       {tab === 'power' && <DevicePower d={d} tech={tech} onSaved={setData} />}
+      {tab === 'vm' && <DeviceVMTab deviceId={id} />}
       {tab === 'terminal' && (d.online ? <Card pad={false} class="term-card"><TerminalView id={id} os={d.os} /></Card> : <Card><Empty icon="terminal" title="Device is offline">The terminal is available when the agent is connected.</Empty></Card>)}
       {tab === 'processes' && <Processes id={id} online={d.online} />}
       {tab === 'services' && <Services id={id} online={d.online} />}

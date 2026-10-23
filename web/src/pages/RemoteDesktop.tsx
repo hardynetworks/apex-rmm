@@ -6,6 +6,7 @@ import { TouchControls, TouchHelp, TouchMode, isTouchDevice, loadTouchMode } fro
 import { native } from '../native';
 import { FileLink, FilesPanel, droppedItems, useTransfers } from './RemoteFiles';
 import { RTCLink } from './RemoteRTC';
+import { VMPanel, powerLabel, useDeviceVM } from './VMManage';
 import { StreamSettings, VideoSink, h264Supported, loadSettings, optMessage, saveSettings } from './RemoteVideo';
 
 type Display = { name: string; w: number; h: number; primary: boolean };
@@ -42,6 +43,8 @@ export function RemoteDesktop({ id }: { id: string }) {
   const vcRef = useRef(false);
   const [link, setLink] = useState<FileLink | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
+  const vmInfo = useDeviceVM(id);
+  const [vmOpen, setVmOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const transfers = useTransfers(link);
   const linkRef = useRef(link);
@@ -475,9 +478,12 @@ export function RemoteDesktop({ id }: { id: string }) {
             </select>
           )}
           {link && (
-            <Button size="sm" variant="ghost" icon="folder" class={filesOpen ? 'rd-capture on' : ''} onClick={() => setFilesOpen(!filesOpen)} title="Transfer files to and from the remote device">
+            <Button size="sm" variant="ghost" icon="folder" class={filesOpen ? 'rd-capture on' : ''} onClick={() => { setFilesOpen(!filesOpen); if (!filesOpen) setVmOpen(false); }} title="Transfer files to and from the remote device">
               {touch ? (activeTransfers ? String(activeTransfers) : '') : activeTransfers ? `Files (${activeTransfers})` : 'Files'}
             </Button>
+          )}
+          {vmInfo.vm && (
+            <Button size="sm" variant="ghost" icon="box" class={vmOpen ? 'rd-capture on' : ''} onClick={() => { setVmOpen(!vmOpen); if (!vmOpen) setFilesOpen(false); }} title="This computer is a vSphere VM: power, snapshots, CPU and memory, disks, network and ISOs">{touch ? '' : 'VM'}</Button>
           )}
           <Button size="sm" variant="ghost" icon="settings" class={showSettings ? 'rd-capture on' : ''} onClick={() => setShowSettings(!showSettings)} title="Frame rate, bandwidth and resolution">{touch ? '' : 'Stream'}</Button>
           {!touch && <Button size="sm" variant="ghost" icon={fit ? 'maximize' : 'devices'} onClick={() => setFit(!fit)}>{fit ? 'Fit' : '1:1'}</Button>}
@@ -527,6 +533,18 @@ export function RemoteDesktop({ id }: { id: string }) {
         )}
       </div>
       {filesOpen && link && <FilesPanel link={link} onClose={() => { setFilesOpen(false); canvas.current?.focus(); }} />}
+      {vmOpen && vmInfo.vm && (
+        <div class="rd-vm">
+          <div class="rd-files-head">
+            <strong><Icon name="box" size={16} /> {vmInfo.vm.name}</strong>
+            <span class="muted small">{powerLabel(vmInfo.vm.power_state)} · {vmInfo.conn?.name}</span>
+            <button class="rd-icon-btn" onClick={() => { setVmOpen(false); canvas.current?.focus(); }} title="Close"><Icon name="x" size={16} /></button>
+          </div>
+          <div class="rd-vm-body">
+            <VMPanel connId={vmInfo.conn.id} vmRef={vmInfo.vm.ref} vm={vmInfo.vm} onChanged={() => setTimeout(() => vmInfo.reload(true), 3000)} />
+          </div>
+        </div>
+      )}
       </div>
       {touch && status === 'live' && (
         <TouchControls stage={stage} canvas={canvas} send={send} mode={touchMode} setMode={setTouchMode} onCad={() => send({ t: 'cad' })} />

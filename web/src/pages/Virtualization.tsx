@@ -7,6 +7,7 @@ import { Link, navigate, useQuery } from '../router';
 import { Badge, Button, Card, Empty, ErrorBox, Field, Meter, Modal, PageHeader, SearchInput, Spinner, Tabs, attempt, confirmDialog, fmtBytes, fmtDate, timeAgo, toast, useFetch } from '../ui';
 import { useCan } from '../user';
 import { LineChart } from '../chart';
+import { PowerModal, VMModal } from './VMManage';
 
 // ---------- helpers ----------
 
@@ -294,6 +295,7 @@ function VMs({ conn, vms, tech, admin, reload, refresh, busy }: { conn: any; vms
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actions, setActions] = useState<any | null>(null);
+  const [manage, setManage] = useState<any | null>(null);
   const [deploy, setDeploy] = useState(false);
 
   const rows = useMemo(() => {
@@ -362,6 +364,7 @@ function VMs({ conn, vms, tech, admin, reload, refresh, busy }: { conn: any; vms
                       </td>
                       <td class="right nowrap">
                         {tech && !v.template && <Button size="sm" variant="ghost" icon="power" onClick={() => setActions(v)}>Power</Button>}
+                        <Button size="sm" variant="ghost" icon={admin ? 'edit' : 'info'} onClick={() => setManage(v)} title="CPU, memory, disks, network, CD/DVD and snapshots">{admin ? 'Edit' : 'Details'}</Button>
                         <a class="btn btn-ghost btn-sm" href={v.ui_url} target="_blank" rel="noopener noreferrer" title="Open in the vSphere client (console available there)"><Icon name="external" size={15} /></a>
                       </td>
                     </tr>
@@ -372,43 +375,10 @@ function VMs({ conn, vms, tech, admin, reload, refresh, busy }: { conn: any; vms
           </div>
         )}
       </Card>
+      {manage && <VMModal connId={conn.id} vm={manage} onClose={() => setManage(null)} onChanged={() => setTimeout(reload, 3000)} />}
       {actions && <PowerModal conn={conn} vm={actions} onClose={() => setActions(null)} onDone={() => { setActions(null); setTimeout(reload, 4000); }} />}
       {deploy && <DeployModal conn={conn} vms={chosen} onClose={() => setDeploy(false)} onStarted={(batch) => { setDeploy(false); setSelected(new Set()); navigate(`/virtualization?c=${conn.id}&tab=deploys&batch=${batch}`); }} />}
     </>
-  );
-}
-
-const POWER: { id: string; label: string; icon: string; needs: 'off' | 'on' | 'tools'; danger?: boolean; hint: string }[] = [
-  { id: 'on', label: 'Power on', icon: 'play', needs: 'off', hint: 'Starts the VM.' },
-  { id: 'shutdown', label: 'Shut down guest', icon: 'power', needs: 'tools', hint: 'Clean shutdown through VMware Tools.' },
-  { id: 'reboot', label: 'Restart guest', icon: 'refresh', needs: 'tools', hint: 'Clean restart through VMware Tools.' },
-  { id: 'suspend', label: 'Suspend', icon: 'clock', needs: 'on', hint: 'Saves the VM state to disk and stops it.' },
-  { id: 'reset', label: 'Reset (hard)', icon: 'refresh', needs: 'on', danger: true, hint: 'Like pressing the reset button: no clean shutdown, unsaved data is lost.' },
-  { id: 'off', label: 'Power off (hard)', icon: 'power', needs: 'on', danger: true, hint: 'Like pulling the plug: no clean shutdown, unsaved data is lost.' },
-];
-
-function PowerModal({ conn, vm, onClose, onDone }: { conn: any; vm: any; onClose: () => void; onDone: () => void }) {
-  const [busy, setBusy] = useState('');
-  const toolsOk = vm.tools_running === 'guestToolsRunning';
-  const run = async (a: (typeof POWER)[number]) => {
-    if (!(await confirmDialog({ title: `${a.label}: ${vm.name}?`, body: a.hint, confirm: a.label, danger: !!a.danger }))) return;
-    setBusy(a.id);
-    if (await attempt(() => api.post(`/vsphere/connections/${conn.id}/vms/${vm.ref}/power`, { action: a.id }), `${a.label} sent to ${vm.name}`)) onDone();
-    setBusy('');
-  };
-  const enabled = (a: (typeof POWER)[number]) =>
-    a.needs === 'off' ? vm.power_state !== 'poweredOn' : vm.power_state === 'poweredOn' && (a.needs !== 'tools' || toolsOk);
-  return (
-    <Modal title={<>Power: {vm.name}</>} onClose={onClose} width={420}>
-      <div class="menu" style="position:static;box-shadow:none;border:0;padding:0;min-width:0">
-        {POWER.map((a) => (
-          <button key={a.id} class={a.danger ? 'danger' : ''} disabled={!enabled(a) || !!busy} onClick={() => run(a)} title={!enabled(a) && a.needs === 'tools' && vm.power_state === 'poweredOn' ? 'VMware Tools is not running' : a.hint}>
-            {busy === a.id ? <span class="spinner sm" /> : <Icon name={a.icon} size={16} />} {a.label}
-          </button>
-        ))}
-      </div>
-      <p class="muted small">Currently {powerLabel(vm.power_state).toLowerCase()}{vm.power_state === 'poweredOn' && !toolsOk ? ' · VMware Tools is not running, so only the hard actions are available' : ''}. Actions are recorded in the audit log.</p>
-    </Modal>
   );
 }
 
