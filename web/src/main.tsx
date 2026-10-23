@@ -12,7 +12,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Devices } from './pages/Devices';
 import { DevicePage } from './pages/Device';
 import { RemoteDesktop } from './pages/RemoteDesktop';
-import { TerminalPage } from './pages/Terminal';
+import { TerminalPage, TerminalWindow } from './pages/Terminal';
 import { Scripts, JobPage } from './pages/Scripts';
 import { Alerts } from './pages/Alerts';
 import { Tickets, TicketPage } from './pages/Tickets';
@@ -277,9 +277,10 @@ function App() {
   }
   // Remote desktop is a full-screen view without the shell.
   const rd = match('/devices/:id/remote', path);
+  const tw = new URLSearchParams(location.search).get('window') === '1' ? match('/devices/:id/terminal', path) : null;
   return (
     <UserContext.Provider value={user}>
-      {rd ? <RemoteDesktop id={rd.id} /> : (
+      {rd ? <RemoteDesktop id={rd.id} /> : tw ? <TerminalWindow id={tw.id} /> : (
         <Shell user={user} path={path}>
           <Boundary path={path}><Routes path={path} /></Boundary>
         </Shell>
