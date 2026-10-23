@@ -203,7 +203,7 @@ export function FleetPowerCard() {
   const cost = (k: number) => fmtCost(k, e.rate, e.currency);
   const n = e.now;
   return (
-    <Card title="Power" icon="bolt" class="span-2">
+    <Card title="Power" icon="bolt" class="span-2" actions={<Link href="/power" class="btn btn-ghost btn-sm">All power use &amp; reports</Link>}>
       {n.devices === 0 && !n.hosts && e.top.length === 0 ? (
         <Empty icon="bolt" title="No power readings yet">Agents report power after they're updated (device ⋯ → Update agent).</Empty>
       ) : (
