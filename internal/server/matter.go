@@ -134,11 +134,15 @@ func (m *matterMgr) plugFor(device, conn, host string) (matter.Plug, bool) {
 
 // devicePlugEnergy replaces an agent's power reading with its plug's, when the plug measures power.
 func (m *matterMgr) devicePlugEnergy(deviceID string, e *proto.Energy) *proto.Energy {
-	p, ok := m.plugFor(deviceID, "", "")
-	if !ok || !p.Available || p.Watts == nil {
+	var out *proto.Energy
+	if p, ok := m.plugFor(deviceID, "", ""); ok && p.Available && p.Watts != nil {
+		out = &proto.Energy{Watts: *p.Watts, Source: "matter", Kind: "measured"}
+	} else if w, model, ok := m.s.tp.watts(deviceID, "", ""); ok {
+		_ = model
+		out = &proto.Energy{Watts: w, Source: "tapo", Kind: "measured"}
+	} else {
 		return e
 	}
-	out := &proto.Energy{Watts: *p.Watts, Source: "matter", Kind: "measured"}
 	if e != nil {
 		out.Parts, out.UPS = e.Parts, e.UPS
 	}
@@ -148,12 +152,12 @@ func (m *matterMgr) devicePlugEnergy(deviceID string, e *proto.Energy) *proto.En
 // applyHostPlugs sets the power of vSphere hosts that have a measuring plug.
 func (m *matterMgr) applyHostPlugs(conn string, hosts []vsphere.Host) {
 	for i := range hosts {
-		p, ok := m.plugFor("", conn, hosts[i].Ref)
-		if !ok || !p.Available || p.Watts == nil {
-			continue
+		if p, ok := m.plugFor("", conn, hosts[i].Ref); ok && p.Available && p.Watts != nil {
+			w := *p.Watts
+			hosts[i].PowerWatts, hosts[i].PowerSource, hosts[i].PowerNote = &w, "plug", "Matter smart plug"
+		} else if w, model, ok := m.s.tp.watts("", conn, hosts[i].Ref); ok {
+			hosts[i].PowerWatts, hosts[i].PowerSource, hosts[i].PowerNote = &w, "plug", strings.TrimSpace("Tapo "+model)
 		}
-		w := *p.Watts
-		hosts[i].PowerWatts, hosts[i].PowerSource, hosts[i].PowerNote = &w, "plug", ""
 	}
 }
 

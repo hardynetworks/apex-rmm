@@ -373,3 +373,14 @@ CREATE TABLE IF NOT EXISTS matter_plugs (
     host_ref   text NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- TP-Link Tapo Wi-Fi plugs, polled by the server on the local network ------------------
+CREATE TABLE IF NOT EXISTS tapo_plugs (
+    id         text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name       text NOT NULL DEFAULT '',
+    host       text NOT NULL UNIQUE,                                 -- IP address (optionally :port)
+    device_id  text REFERENCES devices(id) ON DELETE SET NULL,      -- an agent device, or
+    vs_conn    text REFERENCES vsphere_connections(id) ON DELETE SET NULL, -- a vSphere host
+    host_ref   text NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now()
+);

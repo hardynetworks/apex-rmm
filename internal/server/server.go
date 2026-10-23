@@ -29,6 +29,7 @@ type Server struct {
 	hub       *Hub
 	vs        *vsphereMgr
 	mt        *matterMgr
+	tp        *tapoMgr
 }
 
 // conf returns the current effective configuration.
@@ -48,6 +49,7 @@ func New(ctx context.Context, cfg *Config) (*Server, error) {
 	s.hub = newHub(s)
 	s.vs = newVsphereMgr(s)
 	s.mt = newMatterMgr(s)
+	s.tp = newTapoMgr(s)
 	s.auth = newAuth(s)
 	go s.auth.reloadWithRetry(ctx)
 	if s.setupNeeded(ctx) {
@@ -72,6 +74,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.cleanupLoop(ctx)
 	go s.vs.loop(ctx)
 	s.mt.start(ctx)
+	s.tp.start(ctx)
 	srv := &http.Server{Addr: s.conf().Listen, Handler: s.routes(), ReadHeaderTimeout: 15 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -146,6 +149,7 @@ func (s *Server) routes() http.Handler {
 			r.Get("/vsphere/connections/{id}/energy", s.vsphereEnergy)
 			r.Get("/vsphere/connections/{id}/power-history", s.vsphereEnergyHistory)
 			r.Get("/matter", s.getMatter)
+			r.Get("/tapo", s.getTapo)
 
 			// technician+
 			r.Group(func(r chi.Router) {
@@ -219,6 +223,11 @@ func (s *Server) routes() http.Handler {
 				r.Patch("/matter/plugs/{node}", s.updateMatterPlug)
 				r.Post("/matter/plugs/{node}/power", s.matterPlugPower)
 				r.Delete("/matter/plugs/{node}", s.deleteMatterPlug)
+				r.Put("/tapo/settings", s.putTapoSettings)
+				r.Post("/tapo/plugs", s.addTapoPlug)
+				r.Patch("/tapo/plugs/{id}", s.updateTapoPlug)
+				r.Post("/tapo/plugs/{id}/power", s.tapoPlugPower)
+				r.Delete("/tapo/plugs/{id}", s.deleteTapoPlug)
 				r.Delete("/tickets/{id}", s.deleteTicket)
 			})
 		})
