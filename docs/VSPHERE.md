@@ -26,6 +26,10 @@ Create a role and assign it to the service account at the vCenter root with *Pro
 - Power actions: add **Virtual machine → Interaction → Power on / Power off / Reset / Suspend**.
 - Agent deployment: add **Virtual machine → Guest operations → Guest operation modifications,
   Guest operation program execution, Guest operation queries**.
+- Editing VMs: add **Virtual machine → Change configuration** (CPU count, memory, add / extend /
+  remove disk, modify device settings, rename, set annotation), **Virtual machine → Interaction →
+  Configure CD media, Connect devices**, **Virtual machine → Snapshot management** (create, remove,
+  revert), **Datastore → Allocate space, Browse datastore** and **Network → Assign network**.
 
 Give monitoring-only access if you do not want Apex to be able to change VMs: the power buttons
 will then fail with a clear permission message.
@@ -70,6 +74,34 @@ What you actually see depends on the server: ESXi only exposes sensors the hardw
 
 Technicians and admins can power on, shut down (guest, needs Tools), restart (guest), power off,
 reset and suspend VMs. Every action asks for confirmation and is written to the audit log.
+
+### Editing VMs
+
+**Virtualization → Virtual machines → Edit** (admins; everyone else sees **Details**) opens the VM:
+
+- **Summary** with the power actions.
+- **CPU & memory**: vCPUs, cores per socket, memory, VM name and notes. While a VM runs, vCPUs and
+  memory can only be *added*, and only if CPU / memory hot add is enabled on it; otherwise Apex
+  says to power it off first. Cores per socket and any reduction need the VM powered off.
+- **Disks**: grow a disk (never shrink: vSphere can't), add a thin or thick disk on any datastore
+  the host sees, remove a disk (optionally deleting its file). Grow the partition inside the guest
+  afterwards. Disks can't be grown while the VM has snapshots.
+- **Network**: move an adapter to another port group (standard or distributed), connect or
+  disconnect it.
+- **CD/DVD**: mount an `.iso` from any datastore (Apex searches the datastore for them) or eject.
+- **Snapshots**: take (optionally with memory, or quiesced through VMware Tools), revert, delete.
+
+Every change is admin-only, risky ones ask first, and all of them are recorded in the audit log
+(`vsphere.vm_edit`).
+
+### VMs that run the Apex agent
+
+When Apex knows a device is a vSphere VM (matched by BIOS UUID / serial number, IP address or host
+name, as shown in the VM list's *Apex agent* column), the device page gets a **Virtual machine**
+tab with all of the above, and the remote viewer gets a **VM** button in its toolbar, so you can
+mount an ISO, take a snapshot before a change or hard-reset a hung guest without leaving the
+session. A device that is offline because its VM is powered off says so, with a link to power it
+on.
 
 ## 4. Console
 
