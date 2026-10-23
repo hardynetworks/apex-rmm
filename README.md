@@ -412,6 +412,10 @@ Patch management (Windows Update / apt / softwareupdate), Wayland capture via Pi
 
 Connect vCenter under **Virtualization** to monitor hosts/VMs/datastores, get alerts, power VMs on and off and push the agent into guests via VMware Tools. See [docs/VSPHERE.md](docs/VSPHERE.md).
 
+## Power
+
+The **Power** page (in the sidebar) shows every device and ESXi host that reports power: what they draw now, power over time, energy per day, and a table with each one's average draw, kWh, share and cost (set your price per kWh in Settings → General → Power & energy). Pick a date range and, optionally, a client, then **Download PDF** for a printable report of the same figures, e.g. to bill a customer for the power their equipment uses.
+
 ## Smart plugs (Tapo and Matter)
 
 Add TP-Link Tapo Wi-Fi plugs (P110, P115…) by IP address, or pair Matter smart plugs (with `docker compose --profile matter up -d`), under **Settings → Smart plugs** and assign each to a device or an ESXi host: plugs that measure power replace its power reading, and admins can power cycle what a plug feeds. See [docs/TAPO.md](docs/TAPO.md) and [docs/MATTER.md](docs/MATTER.md).
