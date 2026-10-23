@@ -150,6 +150,8 @@ func (s *Server) routes() http.Handler {
 			r.Get("/vsphere/connections/{id}/power-history", s.vsphereEnergyHistory)
 			r.Get("/matter", s.getMatter)
 			r.Get("/tapo", s.getTapo)
+			r.Get("/vsphere/connections/{id}/vms/{ref}/config", s.vsphereVMConfig)
+			r.Get("/devices/{id}/vm", s.deviceVM)
 
 			// technician+
 			r.Group(func(r chi.Router) {
@@ -223,6 +225,16 @@ func (s *Server) routes() http.Handler {
 				r.Patch("/matter/plugs/{node}", s.updateMatterPlug)
 				r.Post("/matter/plugs/{node}/power", s.matterPlugPower)
 				r.Delete("/matter/plugs/{node}", s.deleteMatterPlug)
+				r.Patch("/vsphere/connections/{id}/vms/{ref}/config", s.vsphereVMSettings)
+				r.Post("/vsphere/connections/{id}/vms/{ref}/disks", s.vsphereAddDisk)
+				r.Patch("/vsphere/connections/{id}/vms/{ref}/disks/{key}", s.vsphereResizeDisk)
+				r.Delete("/vsphere/connections/{id}/vms/{ref}/disks/{key}", s.vsphereRemoveDisk)
+				r.Patch("/vsphere/connections/{id}/vms/{ref}/nics/{key}", s.vsphereSetNic)
+				r.Patch("/vsphere/connections/{id}/vms/{ref}/cdroms/{key}", s.vsphereSetCdrom)
+				r.Get("/vsphere/connections/{id}/datastores/{ds}/isos", s.vsphereISOs)
+				r.Post("/vsphere/connections/{id}/vms/{ref}/snapshots", s.vsphereTakeSnapshot)
+				r.Post("/vsphere/connections/{id}/vms/{ref}/snapshots/{snap}/revert", s.vsphereRevertSnapshot)
+				r.Delete("/vsphere/connections/{id}/vms/{ref}/snapshots/{snap}", s.vsphereDeleteSnapshot)
 				r.Put("/tapo/settings", s.putTapoSettings)
 				r.Post("/tapo/plugs", s.addTapoPlug)
 				r.Patch("/tapo/plugs/{id}", s.updateTapoPlug)
