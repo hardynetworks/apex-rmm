@@ -13,6 +13,7 @@ import { Devices } from './pages/Devices';
 import { DevicePage } from './pages/Device';
 import { RemoteDesktop } from './pages/RemoteDesktop';
 import { TerminalPage, TerminalWindow } from './pages/Terminal';
+import { PowerPage } from './pages/PowerPage';
 import { Scripts, JobPage } from './pages/Scripts';
 import { Alerts } from './pages/Alerts';
 import { Tickets, TicketPage } from './pages/Tickets';
@@ -27,6 +28,7 @@ const nav = [
   { href: '/', label: 'Dashboard', icon: 'dashboard' },
   { href: '/devices', label: 'Devices', icon: 'devices' },
   { href: '/virtualization', label: 'Virtualization', icon: 'server' },
+  { href: '/power', label: 'Power', icon: 'bolt' },
   { href: '/alerts', label: 'Alerts', icon: 'bell', badge: 'alerts' },
   { href: '/tickets', label: 'Tickets', icon: 'ticket', badge: 'tickets' },
   { href: '/scripts', label: 'Automation', icon: 'code' },
@@ -247,6 +249,7 @@ function Routes({ path }: { path: string }) {
   if (path === '/scripts') return <Scripts />;
   if ((m = match('/jobs/:id', path))) return <JobPage id={m.id} />;
   if (path === '/virtualization') return <Virtualization />;
+  if (path === '/power') return <PowerPage />;
   if (path === '/alerts') return <Alerts />;
   if (path === '/tickets') return <Tickets />;
   if ((m = match('/tickets/:id', path))) return <TicketPage id={m.id} />;
