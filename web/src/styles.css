@@ -700,3 +700,12 @@ details[open] summary { margin-bottom: 8px; }
 .term-window .terminal { flex: 1; height: auto; min-height: 0; }
 .term-window-title { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #0b1220; border-bottom: 1px solid #1e293b; font-size: 13.5px; }
 .term-window-msg { padding: 20px; }
+/* backups (Backups.tsx) */
+.stack-sm { display: flex; flex-direction: column; gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.chips .muted { margin-right: 4px; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent-text); cursor: pointer; font: inherit; text-align: center; }
+.link-btn:hover { text-decoration: underline; }
+.backup-running { display: flex; align-items: center; gap: 8px; padding: 9px 12px; margin-bottom: 12px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-text); font-size: 13.5px; }
+.restore-progress p { display: flex; align-items: center; gap: 8px; }
+.stack-sm .row-fields > .field { flex: 1; }
