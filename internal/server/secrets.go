@@ -18,6 +18,29 @@ import (
 // app key generated at install time (/secrets/app_key).
 type secretBox struct {
 	aead cipher.AEAD
+	key  string // the raw app key (included in backups)
+	// keys of servers whose backups were restored here; secrets they sealed
+	// still open (see restoreKeys in backup.go)
+	legacy    []cipher.AEAD
+	legacyRaw []string
+}
+
+func aeadFor(key string) cipher.AEAD {
+	sum := sha256.Sum256([]byte(key))
+	block, _ := aes.NewCipher(sum[:])
+	aead, _ := cipher.NewGCM(block)
+	return aead
+}
+
+// setLegacy replaces the extra keys tried when opening secrets.
+func (b *secretBox) setLegacy(keys []string) {
+	b.legacy, b.legacyRaw = nil, nil
+	for _, k := range keys {
+		if k != "" && k != b.key {
+			b.legacy = append(b.legacy, aeadFor(k))
+			b.legacyRaw = append(b.legacyRaw, k)
+		}
+	}
 }
 
 func newSecretBox(keyFile string) *secretBox {
@@ -29,10 +52,7 @@ func newSecretBox(keyFile string) *secretBox {
 		slog.Warn("no app key found; secrets saved in Settings will be stored unencrypted", "app_key_file", keyFile)
 		return &secretBox{}
 	}
-	sum := sha256.Sum256([]byte(key))
-	block, _ := aes.NewCipher(sum[:])
-	aead, _ := cipher.NewGCM(block)
-	return &secretBox{aead: aead}
+	return &secretBox{aead: aeadFor(key), key: key}
 }
 
 func (b *secretBox) seal(plain string) string {
@@ -54,19 +74,24 @@ func (b *secretBox) open(stored string) (string, error) {
 	case strings.HasPrefix(stored, "plain:"):
 		return strings.TrimPrefix(stored, "plain:"), nil
 	case strings.HasPrefix(stored, "enc:"):
-		if b.aead == nil {
+		keys := b.legacy
+		if b.aead != nil {
+			keys = append([]cipher.AEAD{b.aead}, keys...)
+		}
+		if len(keys) == 0 {
 			return "", errors.New("app key missing; cannot decrypt stored secret")
 		}
 		raw, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(stored, "enc:"))
-		if err != nil || len(raw) < b.aead.NonceSize() {
+		if err != nil || len(raw) < keys[0].NonceSize() {
 			return "", errors.New("corrupt stored secret")
 		}
-		n := b.aead.NonceSize()
-		out, err := b.aead.Open(nil, raw[:n], raw[n:], nil)
-		if err != nil {
-			return "", errors.New("stored secret cannot be decrypted (app key changed?)")
+		n := keys[0].NonceSize()
+		for _, k := range keys {
+			if out, err := k.Open(nil, raw[:n], raw[n:], nil); err == nil {
+				return string(out), nil
+			}
 		}
-		return string(out), nil
+		return "", errors.New("stored secret cannot be decrypted (app key changed?)")
 	}
 	return stored, nil
 }

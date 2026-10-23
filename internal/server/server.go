@@ -30,6 +30,8 @@ type Server struct {
 	vs        *vsphereMgr
 	mt        *matterMgr
 	tp        *tapoMgr
+	backups   backupRunner
+	restart   func() // after a restore; exits so Docker restarts the server
 }
 
 // conf returns the current effective configuration.
@@ -41,7 +43,8 @@ func New(ctx context.Context, cfg *Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{base: cfg, db: db, box: newSecretBox(cfg.AppKeyFile)}
+	s := &Server{base: cfg, db: db, box: newSecretBox(cfg.AppKeyFile), restart: defaultRestart}
+	s.loadLegacyKeys(ctx)
 	s.cfgp.Store(cfg.withSettings(SystemSettings{}, ""))
 	if err := s.reloadConfig(ctx); err != nil {
 		return nil, err
@@ -73,6 +76,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.schedulerLoop(ctx)
 	go s.cleanupLoop(ctx)
 	go s.vs.loop(ctx)
+	go s.backupLoop(ctx)
 	s.mt.start(ctx)
 	s.tp.start(ctx)
 	srv := &http.Server{Addr: s.conf().Listen, Handler: s.routes(), ReadHeaderTimeout: 15 * time.Second}
@@ -115,6 +119,9 @@ func (s *Server) routes() http.Handler {
 		r.Post("/auth/local", s.auth.handleLocalLogin)
 		r.Get("/setup", s.handleSetupStatus)
 		r.Post("/setup", s.handleSetup)
+		r.Post("/setup/restore/list", s.setupListBackups)
+		r.Post("/setup/restore", s.setupRestore)
+		r.Get("/setup/restore", s.restoreStatus)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.auth.requireUser)
@@ -241,6 +248,15 @@ func (s *Server) routes() http.Handler {
 				r.Post("/tapo/plugs/{id}/power", s.tapoPlugPower)
 				r.Delete("/tapo/plugs/{id}", s.deleteTapoPlug)
 				r.Delete("/tickets/{id}", s.deleteTicket)
+				r.Get("/backup", s.getBackup)
+				r.Put("/backup/settings", s.putBackupSettings)
+				r.Post("/backup/test", s.testBackup)
+				r.Get("/backup/list", s.listBackups)
+				r.Post("/backup/run", s.runBackupNow)
+				r.Post("/backup/restore", s.restoreBackupHandler)
+				r.Get("/backup/restore", s.restoreStatus)
+				r.Get("/backup/download", s.downloadBackup)
+				r.Delete("/backup/object", s.deleteBackup)
 			})
 		})
 	})

@@ -27,6 +27,9 @@ func (s *Server) reloadConfig(ctx context.Context) error {
 	return nil
 }
 
+// bootID changes every time the server starts (the restore page uses it to see the restart).
+var bootID = randToken(9)
+
 // setupNeeded is true on a fresh install that nobody can sign in to yet.
 func (s *Server) setupNeeded(ctx context.Context) bool {
 	if s.base.LocalAdminPassword != "" || s.loadSystem(ctx).SetupComplete {
@@ -41,7 +44,16 @@ func (s *Server) setupNeeded(ctx context.Context) bool {
 }
 
 func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"needed": s.setupNeeded(r.Context()), "public_url_locked": s.base.Locked["public_url"], "public_url": s.base.PublicURL})
+	writeJSON(w, 200, map[string]any{"needed": s.setupNeeded(r.Context()), "boot": bootID, "public_url_locked": s.base.Locked["public_url"], "public_url": s.base.PublicURL})
+}
+
+// checkSetupCode compares the code from the server log (and audits misses).
+func (s *Server) checkSetupCode(r *http.Request, code string) bool {
+	if s.setupCode != "" && constEq(strings.ToUpper(strings.TrimSpace(code)), strings.ToUpper(s.setupCode)) {
+		return true
+	}
+	s.audit(r.Context(), nil, r, "setup.bad_code", "system", "", nil)
+	return false
 }
 
 // handleSetup creates the first administrator and the basic settings.
@@ -63,8 +75,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "setup has already been completed")
 		return
 	}
-	if s.setupCode == "" || !constEq(strings.ToUpper(strings.TrimSpace(in.Code)), strings.ToUpper(s.setupCode)) {
-		s.audit(ctx, nil, r, "setup.bad_code", "system", "", nil)
+	if !s.checkSetupCode(r, in.Code) {
 		writeErr(w, http.StatusForbidden, "wrong setup code - find it in the server log (docker compose logs apex)")
 		return
 	}
