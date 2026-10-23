@@ -16,7 +16,8 @@ import (
 
 // Windows GPUs: the adapters come from DXGI (name, vendor, dedicated memory, LUID) and their use
 // from the "GPU Engine", "GPU Adapter Memory" and "GPU Process Memory" performance counters,
-// the same figures Task Manager shows. Temperatures need the vendor's tool (nvidia-smi).
+// the same figures Task Manager shows. Temperatures need the vendor's tool: nvidia-smi for
+// NVIDIA, ADL (part of the Radeon driver) for AMD power, temperature, fan and clocks.
 
 var (
 	gpuDXGI              = windows.NewLazySystemDLL("dxgi.dll")
@@ -198,7 +199,83 @@ func (g *winGPU) gpus(skipNVIDIA bool) []proto.GPU {
 		}
 		out = append(out, x)
 	}
+	addADL(out)
 	return out
+}
+
+// addADL fills AMD GPUs' power, temperature, fan and clocks from ADL.
+func addADL(gpus []proto.GPU) {
+	var names []string
+	var at []int
+	for i, x := range gpus {
+		if x.Vendor == "amd" {
+			names, at = append(names, x.Name), append(at, i)
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	rs := amdADL.readings()
+	for k, j := range matchADL(names, rs) {
+		if j < 0 {
+			continue
+		}
+		r, x := rs[j], &gpus[at[k]]
+		if r.Watts >= 0 {
+			x.Watts = round1(r.Watts)
+		}
+		if r.TempC >= 0 {
+			x.TempC = r.TempC
+		}
+		if r.FanPct >= 0 {
+			x.FanPct = r.FanPct
+		}
+		if r.ClockMHz > 0 {
+			x.ClockMHz = r.ClockMHz
+		}
+		if r.MemMHz > 0 {
+			x.MemClock = r.MemMHz
+		}
+		if x.Load < 0 && r.Load >= 0 {
+			x.Load = r.Load
+		}
+		x.Source = "pdh+adl"
+	}
+}
+
+// amdPowerParts are the AMD GPUs' power draw for the device's energy reading. An integrated
+// Radeon's figure is part of the CPU package's, so it is named to be left out of the sum.
+func amdPowerParts() []proto.PowerPart {
+	g, ok := gpuMonitorInstance().plat.(*winGPU)
+	if !ok {
+		return nil
+	}
+	g.mu.Lock()
+	var names []string
+	var integrated []bool
+	for _, a := range g.listAdapters() {
+		if winVendor(a.vendor) == "amd" {
+			names = append(names, a.name)
+			integrated = append(integrated, a.dedicated < 256<<20)
+		}
+	}
+	g.mu.Unlock()
+	if len(names) == 0 {
+		return nil
+	}
+	rs := amdADL.readings()
+	var parts []proto.PowerPart
+	for k, j := range matchADL(names, rs) {
+		if j < 0 || rs[j].Watts < 0 {
+			continue
+		}
+		name := names[k]
+		if integrated[k] {
+			name = "Integrated GPU (" + name + ")"
+		}
+		parts = append(parts, proto.PowerPart{Name: name, Watts: rs[j].Watts, Source: "adl"})
+	}
+	return parts
 }
 
 func (g *winGPU) procUsage(skipNVIDIA bool) map[int32]procGPU {

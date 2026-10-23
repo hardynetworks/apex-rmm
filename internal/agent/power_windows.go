@@ -186,7 +186,23 @@ func (p *winPower) parts() []proto.PowerPart {
 			rest = append(rest, proto.PowerPart{Name: "Integrated GPU", Watts: w, Source: "rapl"})
 		}
 	}
-	return append(pkgs, rest...)
+	parts := append(pkgs, rest...)
+	for _, g := range amdPowerParts() {
+		if strings.HasPrefix(g.Name, "Integrated GPU") && hasPart(parts, "Integrated GPU") {
+			continue // RAPL already reports the iGPU plane
+		}
+		parts = append(parts, g)
+	}
+	return parts
+}
+
+func hasPart(parts []proto.PowerPart, name string) bool {
+	for _, p := range parts {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 type systemPowerStatus struct {

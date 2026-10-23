@@ -140,7 +140,7 @@ func (p *powerMonitor) collect(cpuPct float64) *proto.Energy {
 	if len(parts) > 0 {
 		sum := cfg.ExtraW
 		for _, pt := range parts {
-			if pt.Name != "CPU cores" && pt.Name != "Integrated GPU" { // already inside the package figure
+			if pt.Name != "CPU cores" && !strings.HasPrefix(pt.Name, "Integrated GPU") { // already inside the package figure
 				sum += pt.Watts
 			}
 		}
