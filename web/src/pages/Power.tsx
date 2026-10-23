@@ -22,6 +22,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   estimate: 'Estimate from CPU load',
   vsphere: 'VMware vSphere host',
   matter: 'Matter smart plug',
+  tapo: 'Tapo smart plug',
 };
 
 export function fmtW(w: number | null | undefined) {
