@@ -4,13 +4,14 @@ import { navigate, useQuery } from '../router';
 import { Badge, Button, Card, CopyText, Empty, Field, Kv, PageHeader, SearchInput, Spinner, Tabs, attempt, fmtDate, timeAgo, toast, useFetch } from '../ui';
 import { useCan, useUser } from '../user';
 import { SmartPlugsSettings } from './SmartPlugs';
+import { BackupSettings } from './Backups';
 
 export function Settings() {
   const q = useQuery();
   const admin = useCan('admin');
   const tab = q.get('tab') || (admin ? 'general' : 'users');
   const tabs = admin
-    ? [{ id: 'general', label: 'General', icon: 'settings' }, { id: 'users', label: 'Users & roles', icon: 'users' }, { id: 'plugs', label: 'Smart plugs', icon: 'bolt' }, { id: 'audit', label: 'Audit log', icon: 'history' }]
+    ? [{ id: 'general', label: 'General', icon: 'settings' }, { id: 'users', label: 'Users & roles', icon: 'users' }, { id: 'plugs', label: 'Smart plugs', icon: 'bolt' }, { id: 'backups', label: 'Backups', icon: 'archive' }, { id: 'audit', label: 'Audit log', icon: 'history' }]
     : [{ id: 'users', label: 'Users & roles', icon: 'users' }];
   return (
     <div class="page">
@@ -19,6 +20,7 @@ export function Settings() {
       {tab === 'general' && admin && <General />}
       {tab === 'users' && <Users />}
       {tab === 'plugs' && admin && <SmartPlugsSettings />}
+      {tab === 'backups' && admin && <BackupSettings />}
       {tab === 'audit' && admin && <Audit />}
     </div>
   );

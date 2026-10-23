@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api';
 import { navigate } from '../router';
-import { Button, ErrorBox, Field, Spinner } from '../ui';
+import { Button, ErrorBox, Field, Spinner, fmtBytes, fmtDate } from '../ui';
+import { RestoreProgress, S3, S3Fields, emptyS3 } from './Backups';
 
 /** First-run wizard: creates the first admin and the basic server settings. */
 export function Setup() {
@@ -11,6 +12,13 @@ export function Setup() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k: string, val: string) => setV({ ...v, [k]: val });
+  // restore from a backup instead of setting up from scratch
+  const [mode, setMode] = useState<'new' | 'restore'>('new');
+  const [s3, setS3] = useState<S3>({ ...emptyS3 });
+  const [backups, setBackups] = useState<any[] | null>(null);
+  const [pick, setPick] = useState('');
+  const [pass, setPass] = useState('');
+  const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
     api.get('/setup').then((s) => {
@@ -28,6 +36,39 @@ export function Setup() {
     if (step === 1 && !v.code.trim()) return setErr('Enter the setup code from the server log.');
     if (step === 2 && !/^https?:\/\/[^/]+/.test(v.public_url)) return setErr('The public URL must look like https://rmm.example.com');
     setStep(step + 1);
+  };
+  const startRestoreMode = () => {
+    setErr('');
+    if (!v.code.trim()) return setErr('Enter the setup code from the server log first.');
+    setMode('restore');
+  };
+  const findBackups = async (e: Event) => {
+    e.preventDefault();
+    setErr('');
+    setBusy(true);
+    try {
+      const r = await api.post('/setup/restore/list', { code: v.code, s3 });
+      setBackups(r.backups);
+      setPick(r.backups[0]?.key || '');
+      if (!r.backups.length) setErr('No Apex backups were found in that bucket and folder.');
+    } catch (e: any) {
+      setErr(e.message);
+      if (/setup code/i.test(e.message)) { setMode('new'); setStep(1); }
+    }
+    setBusy(false);
+  };
+  const restore = async (e: Event) => {
+    e.preventDefault();
+    setErr('');
+    if (!pass) return setErr('Enter the backup passphrase.');
+    setBusy(true);
+    try {
+      await api.post('/setup/restore', { code: v.code, s3, key: pick, passphrase: pass });
+      setRestoring(true);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+    setBusy(false);
   };
   const finish = async (e: Event) => {
     e.preventDefault();
@@ -53,19 +94,52 @@ export function Setup() {
           <h1>Welcome to Apex RMM</h1>
           <p class="muted">Let's get your server set up.</p>
         </div>
-        <div class="steps">{[1, 2, 3].map((i) => <span key={i} class={i <= step ? 'on' : ''} />)}</div>
+        {mode === 'new' && <div class="steps">{[1, 2, 3].map((i) => <span key={i} class={i <= step ? 'on' : ''} />)}</div>}
         {err && <ErrorBox msg={err} />}
 
-        {step === 1 && (
+        {mode === 'restore' && restoring && <RestoreProgress statusPath="/setup/restore" inline />}
+        {mode === 'restore' && !restoring && (
+          <div class="stack">
+            <p class="small">Restore a backup made by another Apex server. Devices, users, settings and history come back, and agents reconnect once this server is reachable at the same address.</p>
+            {!backups && (
+              <form onSubmit={findBackups} class="stack">
+                <S3Fields v={s3} onChange={setS3} />
+                <div class="row-fields">
+                  <Button onClick={() => { setMode('new'); setErr(''); }}>Back</Button>
+                  <Button variant="primary" class="grow" loading={busy} onClick={findBackups as any}>Find backups</Button>
+                </div>
+              </form>
+            )}
+            {backups && (
+              <form onSubmit={restore} class="stack">
+                <Field label="Backup">
+                  <select value={pick} onChange={(e) => setPick((e.target as HTMLSelectElement).value)}>
+                    {backups.map((b) => <option key={b.key} value={b.key}>{fmtDate(b.modified)} ({fmtBytes(b.size)})</option>)}
+                  </select>
+                </Field>
+                <Field label="Backup passphrase" hint="The passphrase set in Settings → Backups on the old server.">
+                  <input type="password" autoComplete="off" value={pass} autoFocus onInput={(e) => setPass((e.target as HTMLInputElement).value)} />
+                </Field>
+                <div class="row-fields">
+                  <Button onClick={() => { setBackups(null); setErr(''); }}>Back</Button>
+                  <Button variant="primary" class="grow" loading={busy} disabled={!pick} onClick={restore as any}>Restore</Button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+
+        {mode === 'new' && step === 1 && (
           <form onSubmit={next} class="stack">
             <p class="small">To prove you own this server, enter the setup code printed in its log:</p>
             <pre class="output">docker compose logs apex | grep "setup code"</pre>
             <Field label="Setup code"><input value={v.code} autoFocus autoComplete="off" class="mono" onInput={(e) => set('code', (e.target as HTMLInputElement).value)} /></Field>
             <Button variant="primary" class="btn-block" onClick={next as any}>Continue</Button>
+            <button type="button" class="link-btn small" onClick={startRestoreMode}>Moving from another Apex server? Restore a backup instead</button>
           </form>
         )}
 
-        {step === 2 && (
+        {mode === 'new' && step === 2 && (
           <form onSubmit={next} class="stack">
             <Field label="Company name" hint="Shown in the sidebar and used for your first client."><input value={v.company_name} onInput={(e) => set('company_name', (e.target as HTMLInputElement).value)} /></Field>
             <Field label="Public URL" hint={status.public_url_locked ? 'Set by PUBLIC_URL in .env.' : 'The address people and agents use to reach this server. Usually the address in your browser right now.'}>
@@ -78,7 +152,7 @@ export function Setup() {
           </form>
         )}
 
-        {step === 3 && (
+        {mode === 'new' && step === 3 && (
           <form onSubmit={finish} class="stack">
             <p class="small muted">Create the first administrator. This local login keeps working even if single sign-on is down.</p>
             <Field label="Your name"><input value={v.name} autoFocus onInput={(e) => set('name', (e.target as HTMLInputElement).value)} /></Field>
