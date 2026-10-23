@@ -11,7 +11,7 @@ import {
 } from '../ui';
 import { useCan } from '../user';
 import { JobOutput, RunScriptModal } from './Scripts';
-import { TerminalView } from './Terminal';
+import { TerminalView, openTerminalWindow } from './Terminal';
 import { NewTicketModal } from './Tickets';
 import { DevicePower, KindBadge, fmtW } from './Power';
 import { DeviceVMTab, useDeviceVM } from './VMManage';
@@ -80,6 +80,7 @@ export function DevicePage({ id }: { id: string }) {
         subtitle={<span class="meta-row"><OsBadge os={d.os} /> <span>{d.platform} {d.os_version}</span> <span>·</span> <span class="title-row">{d.type !== 'other' && <Icon name={typeIcon(d.type)} size={14} />} {TYPE_LABEL[d.type] || 'Other'}</span> <span>·</span> <span>{d.client_name || 'No client'}{d.site_name ? ' / ' + d.site_name : ''}</span> {inMaint && <Badge tone="warning">Maintenance until {new Date(d.maintenance_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Badge>}</span>}
         actions={tech && <>
           <Button variant="primary" icon="pointer" disabled={!d.online} onClick={openRemote} title={d.online ? 'Open built-in remote control' : 'Device is offline'}>Remote control</Button>
+          <Button icon="terminal" disabled={!d.online} onClick={() => openTerminalWindow(id)} title={d.online ? 'Open a remote terminal in its own window' : 'Device is offline'}>Terminal</Button>
           <Button icon="link" onClick={() => setRdOpen(true)}>RustDesk</Button>
           <Button icon="play" disabled={!d.online && false} onClick={() => setRunOpen(true)}>Run script</Button>
           <div class="menu-wrap">

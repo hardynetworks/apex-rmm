@@ -13,7 +13,7 @@ const shells: Record<string, [string, string][]> = {
   linux: [['bash', 'bash'], ['sh', 'sh'], ['zsh', 'zsh']],
 };
 
-export function TerminalView({ id, os }: { id: string; os: string }) {
+export function TerminalView({ id, os, popup }: { id: string; os: string; popup?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const [shell, setShell] = useState((shells[os] || shells.linux)[0][0]);
   const [state, setState] = useState<'connecting' | 'ready' | 'closed'>('connecting');
@@ -69,7 +69,8 @@ export function TerminalView({ id, os }: { id: string; os: string }) {
         <span class={'term-state ' + state}><span class="dot" />{state === 'ready' ? 'Connected' : state === 'connecting' ? 'Connecting…' : 'Disconnected'}</span>
         <div class="grow" />
         {state === 'closed' && <Button size="sm" icon="refresh" onClick={() => setGen(gen + 1)}>Reconnect</Button>}
-        <Link href={`/devices/${id}/terminal`} class="btn btn-ghost btn-sm" title="Full page"><Icon name="maximize" size={15} /></Link>
+        {!popup && <Button size="sm" variant="ghost" icon="external" onClick={() => openTerminalWindow(id)} title="Open in its own window" />}
+        {!popup && <Link href={`/devices/${id}/terminal`} class="btn btn-ghost btn-sm" title="Full page"><Icon name="maximize" size={15} /></Link>}
       </div>
       <div class="term-host" ref={host} />
     </div>
@@ -88,6 +89,25 @@ export function TerminalPage({ id }: { id: string }) {
         </div>
       </div>
       <div class="card term-card full"><TerminalView id={id} os={data.os} /></div>
+    </div>
+  );
+}
+
+/** Opens the device's terminal in its own window (like remote control). */
+export function openTerminalWindow(id: string) {
+  window.open(`/devices/${id}/terminal?window=1`, 'apex-term-' + id, 'popup,width=1100,height=700');
+}
+
+/** The terminal on its own, filling a pop-up window. */
+export function TerminalWindow({ id }: { id: string }) {
+  const { data, error } = useFetch<any>('/devices/' + id);
+  useEffect(() => { if (data) document.title = `Terminal · ${deviceName(data)}`; }, [data]);
+  if (error) return <div class="term-window"><p class="term-window-msg">{error}</p></div>;
+  if (!data) return <div class="term-window"><Spinner /></div>;
+  return (
+    <div class="term-window">
+      <div class="term-window-title"><Icon name="terminal" size={15} /> <strong>{deviceName(data)}</strong>{!data.online && <span class="muted small"> · offline</span>}</div>
+      <TerminalView id={id} os={data.os} popup />
     </div>
   );
 }
