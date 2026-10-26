@@ -2,13 +2,16 @@
 # Apex RMM - server image (API + dashboard + agent binaries for every platform)
 
 # ---- dashboard ----
-FROM node:22-alpine AS web
+# The dashboard and Go stages run on the build machine's own CPU (Go cross-compiles),
+# so building the arm64 image doesn't emulate npm or the compiler.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web
 COPY web/ ./
 RUN rm -rf dist node_modules && npm install --no-audit --no-fund && npm run build
 
 # ---- Go: server + cross-compiled agents ----
-FROM golang:1.24-alpine AS go
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS go
+ARG TARGETOS=linux TARGETARCH
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS="-trimpath -mod=mod"
 COPY go.mod go.sum ./
@@ -18,7 +21,7 @@ COPY internal ./internal
 RUN go mod download && go build ./... || (echo "regenerating go.sum" && rm -f go.sum && go mod tidy && go build ./...)
 ARG VERSION=0.1.0
 ENV LDFLAGS="-s -w -X github.com/hardynetworks/apex-rmm/internal/proto.Version=${VERSION}"
-RUN go build -ldflags "$LDFLAGS" -o /out/apex-server ./cmd/apex-server
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "$LDFLAGS" -o /out/apex-server ./cmd/apex-server
 COPY scripts/build-agents.sh ./scripts/
 RUN sh scripts/build-agents.sh /out/agents "$LDFLAGS"
 

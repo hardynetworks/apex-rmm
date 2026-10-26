@@ -38,6 +38,10 @@ A self-hosted Remote Monitoring & Management platform that runs in Docker, signs
 * The server relays terminal and desktop traffic; nothing is stored.
 * One static Go binary per platform, no runtime dependencies (built with `CGO_ENABLED=0`, including macOS).
 
+## Install on HardyOS
+
+On a [HardyOS](https://github.com/HARDYOS/HARDYOS) server, Apex RMM is a one-click app: open the App Store, choose Apex RMM and press Install. It runs the published image `ghcr.io/hardynetworks/apex-rmm` (built by the "Container image" workflow) with its own PostgreSQL and RustDesk server. The setup wizard's one-time code is in App Store > Apex RMM > Logs.
+
 ## Install (Ubuntu)
 
 These steps set Apex RMM up on an Ubuntu server with Docker. Any Linux host with Docker Engine and the Compose plugin works the same way.
