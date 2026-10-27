@@ -1,0 +1,2 @@
+# Shell scripts run on Linux (Docker builds, agent installers): keep LF even on Windows checkouts.
+*.sh text eol=lf
