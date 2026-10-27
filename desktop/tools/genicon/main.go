@@ -1,4 +1,4 @@
-// genicon draws the Apex RMM logo (a white "A" on a blue rounded square) and writes a
+// genicon draws the Apex RMM logo (a gradient "A" with a pulse crossbar on a dark rounded square) and writes a
 // multi-size Windows .ico file, so the repository doesn't need binary image files.
 //
 //	go run ./tools/genicon -out build/icon.ico [-png build/icon.png]
@@ -21,51 +21,108 @@ import (
 )
 
 var (
-	blue  = color.RGBA{0x25, 0x63, 0xeb, 0xff}
-	white = color.RGBA{0xff, 0xff, 0xff, 0xff}
+	cyan   = color.RGBA{0x22, 0xd3, 0xee, 0xff}
+	blue   = color.RGBA{0x3b, 0x82, 0xf6, 0xff}
+	purple = color.RGBA{0xa8, 0x55, 0xf7, 0xff}
+	bgTop  = color.RGBA{0x16, 0x20, 0x3a, 0xff}
+	bgBot  = color.RGBA{0x06, 0x0a, 0x14, 0xff}
+	pulse  = color.RGBA{0xe0, 0xf2, 0xfe, 0xff}
+	white  = color.RGBA{0xff, 0xff, 0xff, 0xff}
 )
 
 type pt struct{ x, y float64 }
 
-// render draws the logo, which is defined on a 32×32 grid (same as the web favicon).
+// gradient is an image whose colour runs through stops as t goes from 0 to 1;
+// at maps a pixel position to t.
+type gradient struct {
+	stops []color.RGBA
+	at    func(x, y int) float64
+}
+
+func (g gradient) ColorModel() color.Model { return color.RGBAModel }
+func (g gradient) Bounds() image.Rectangle { return image.Rect(-1e9, -1e9, 1e9, 1e9) }
+func (g gradient) At(x, y int) color.Color {
+	t := math.Max(0, math.Min(1, g.at(x, y))) * float64(len(g.stops)-1)
+	i := int(t)
+	if i >= len(g.stops)-1 {
+		return g.stops[len(g.stops)-1]
+	}
+	f := t - float64(i)
+	a, b := g.stops[i], g.stops[i+1]
+	mix := func(p, q uint8) uint8 { return uint8(float64(p) + (float64(q)-float64(p))*f + 0.5) }
+	return color.RGBA{mix(a.R, b.R), mix(a.G, b.G), mix(a.B, b.B), 0xff}
+}
+
+// render draws the logo, which is defined on a 32×32 grid (same as the web favicon):
+// a dark rounded square with a gradient edge, a gradient "A" whose crossbar is a
+// monitoring pulse, and a glowing dot on the apex.
 func render(size int) *image.RGBA {
 	s := float64(size) / 32
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	// cyan → blue → purple from bottom-left to top-right; dark navy top to bottom
+	accent := gradient{[]color.RGBA{cyan, blue, purple}, func(x, y int) float64 {
+		return (float64(x) + float64(size-y)) / float64(2*size)
+	}}
+	bg := gradient{[]color.RGBA{bgTop, bgBot}, func(x, y int) float64 { return float64(y) / float64(size) }}
 
-	// rounded square, radius 8
-	r := vector.NewRasterizer(size, size)
-	rr := 8 * s
-	w := float64(size)
-	k := 0.5523 * rr // cubic approximation of a quarter circle
-	r.MoveTo(float32(rr), 0)
-	r.LineTo(float32(w-rr), 0)
-	r.CubeTo(float32(w-rr+k), 0, float32(w), float32(rr-k), float32(w), float32(rr))
-	r.LineTo(float32(w), float32(w-rr))
-	r.CubeTo(float32(w), float32(w-rr+k), float32(w-rr+k), float32(w), float32(w-rr), float32(w))
-	r.LineTo(float32(rr), float32(w))
-	r.CubeTo(float32(rr-k), float32(w), 0, float32(w-rr+k), 0, float32(w-rr))
-	r.LineTo(0, float32(rr))
-	r.CubeTo(0, float32(rr-k), float32(rr-k), 0, float32(rr), 0)
-	r.ClosePath()
-	r.Draw(img, img.Bounds(), image.NewUniform(blue), image.Point{})
+	// paint fills the union of shapes with src at the given opacity
+	paint := func(src image.Image, opacity float64, shapes ...func(*vector.Rasterizer)) {
+		mask := image.NewAlpha(img.Bounds())
+		for _, f := range shapes {
+			addShape(mask, size, f)
+		}
+		for i, v := range mask.Pix {
+			mask.Pix[i] = uint8(float64(v) * opacity)
+		}
+		draw.DrawMask(img, img.Bounds(), src, image.Point{}, mask, image.Point{}, draw.Over)
+	}
 
-	// the "A": two legs and a crossbar, stroke width 3.2, round caps and joins
-	strokes := [][2]pt{
-		{{8.5, 24}, {16, 8}},
-		{{16, 8}, {23.5, 24}},
-		{{11.6, 18.5}, {20.4, 18.5}},
-	}
-	half := 1.6 * s
-	mask := image.NewAlpha(img.Bounds())
-	for _, st := range strokes {
-		a, b := pt{st[0].x * s, st[0].y * s}, pt{st[1].x * s, st[1].y * s}
-		// each piece is drawn on its own rasterizer and merged with "max", so overlaps never cancel
-		addShape(mask, size, func(r *vector.Rasterizer) { segment(r, a, b, half) })
-		addShape(mask, size, func(r *vector.Rasterizer) { circle(r, a, half) })
-		addShape(mask, size, func(r *vector.Rasterizer) { circle(r, b, half) })
-	}
-	draw.DrawMask(img, img.Bounds(), image.NewUniform(white), image.Point{}, mask, image.Point{}, draw.Over)
+	// background with a 1-unit gradient edge at 60%: the edge colour fills the whole
+	// square, then the dark fill is drawn inset by one unit
+	paint(bg, 1, func(r *vector.Rasterizer) { roundRect(r, 0, 32*s, 8*s) })
+	paint(accent, 0.6, func(r *vector.Rasterizer) { roundRect(r, 0, 32*s, 8*s) })
+	paint(bg, 1, func(r *vector.Rasterizer) { roundRect(r, 1*s, 30*s, 7*s) })
+
+	// the "A": two legs, stroke width 3.2, round caps and joins
+	paint(accent, 1, polyline([]pt{{7, 25}, {16, 7.5}, {25, 25}}, s, 1.6)...)
+	// the pulse crossbar, stroke width 1.6
+	paint(image.NewUniform(pulse), 1, polyline([]pt{{10.3, 18.5}, {13, 18.5}, {14.5, 15.5}, {16.6, 21.5}, {18.2, 18.5}, {21.7, 18.5}}, s, 0.8)...)
+	// glowing dot on the apex
+	apex := pt{16 * s, 7.5 * s}
+	paint(image.NewUniform(cyan), 0.3, func(r *vector.Rasterizer) { circle(r, apex, 3.6*s) })
+	paint(image.NewUniform(white), 1, func(r *vector.Rasterizer) { circle(r, apex, 1.9*s) })
 	return img
+}
+
+// polyline returns the shapes for a stroked line through pts (on the 32×32 grid)
+// with round caps and joins; half is half the stroke width.
+func polyline(pts []pt, s, half float64) []func(*vector.Rasterizer) {
+	var shapes []func(*vector.Rasterizer)
+	for i, p := range pts {
+		c := pt{p.x * s, p.y * s}
+		shapes = append(shapes, func(r *vector.Rasterizer) { circle(r, c, half*s) })
+		if i > 0 {
+			a := pt{pts[i-1].x * s, pts[i-1].y * s}
+			shapes = append(shapes, func(r *vector.Rasterizer) { segment(r, a, c, half*s) })
+		}
+	}
+	return shapes
+}
+
+// roundRect adds a square of side w at (o, o) with corner radius rr.
+func roundRect(r *vector.Rasterizer, o, w, rr float64) {
+	k := 0.5523 * rr // cubic approximation of a quarter circle
+	e := o + w
+	r.MoveTo(float32(o+rr), float32(o))
+	r.LineTo(float32(e-rr), float32(o))
+	r.CubeTo(float32(e-rr+k), float32(o), float32(e), float32(o+rr-k), float32(e), float32(o+rr))
+	r.LineTo(float32(e), float32(e-rr))
+	r.CubeTo(float32(e), float32(e-rr+k), float32(e-rr+k), float32(e), float32(e-rr), float32(e))
+	r.LineTo(float32(o+rr), float32(e))
+	r.CubeTo(float32(o+rr-k), float32(e), float32(o), float32(e-rr+k), float32(o), float32(e-rr))
+	r.LineTo(float32(o), float32(o+rr))
+	r.CubeTo(float32(o), float32(o+rr-k), float32(o+rr-k), float32(o), float32(o+rr), float32(o))
+	r.ClosePath()
 }
 
 func addShape(dst *image.Alpha, size int, f func(*vector.Rasterizer)) {

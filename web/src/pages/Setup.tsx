@@ -3,6 +3,7 @@ import { api } from '../api';
 import { navigate } from '../router';
 import { Button, ErrorBox, Field, Spinner, fmtBytes, fmtDate } from '../ui';
 import { RestoreProgress, S3, S3Fields, emptyS3 } from './Backups';
+import { Logo } from '../logo';
 
 /** First-run wizard: creates the first admin and the basic server settings. */
 export function Setup() {
@@ -90,7 +91,7 @@ export function Setup() {
     <div class="login">
       <div class="login-card setup-card">
         <div class="login-brand">
-          <svg viewBox="0 0 32 32" width="44" height="44"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M8.5 24L16 8l7.5 16M11.6 18.5h8.8" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <Logo size={44} />
           <h1>Welcome to Apex RMM</h1>
           <p class="muted">Let's get your server set up.</p>
         </div>

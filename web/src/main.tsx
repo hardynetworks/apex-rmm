@@ -23,6 +23,7 @@ import { Settings } from './pages/Settings';
 import { UserContext } from './user';
 import { native } from './native';
 import { closeAllDeviceTabs, closeDeviceTab, deviceTabHref, moveDeviceTab, useDeviceTabs } from './devtabs';
+import { Logo } from './logo';
 
 const nav = [
   { href: '/', label: 'Dashboard', icon: 'dashboard' },
@@ -99,7 +100,7 @@ function Shell({ user, children, path }: { user: User; children: ComponentChildr
       <aside class="sidebar">
         <div class="brand">
           <div class="logo glow">
-            <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M8.5 24L16 8l7.5 16M11.6 18.5h8.8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            <Logo size={40} />
           </div>
           <div class="brand-text">
             <strong>{company}</strong>

@@ -152,7 +152,7 @@ input.mini { width: 70px; display: inline-block; padding: 3px 6px; }
 .sidebar::before { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0, 212, 255, .05), transparent 45%); pointer-events: none; }
 .sidebar > * { position: relative; }
 .brand { display: flex; gap: 12px; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--sidebar-border); min-height: 81px; }
-.logo { width: 40px; height: 40px; border-radius: 8px; flex: none; display: grid; place-items: center; background: linear-gradient(135deg, #00d4ff, #06b6d4); color: #0a0e1a; }
+.logo { width: 40px; height: 40px; border-radius: 8px; flex: none; display: grid; place-items: center; }
 .glow { box-shadow: 0 0 20px rgba(0, 212, 255, .2), 0 0 40px rgba(0, 212, 255, .1); }
 .brand-text { min-width: 0; }
 .brand strong { color: #e4e7eb; display: block; font-size: 17px; font-weight: 600; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
