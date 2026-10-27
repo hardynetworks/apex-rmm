@@ -5,14 +5,15 @@ import { Badge, Button, Card, CopyText, Empty, Field, Kv, PageHeader, SearchInpu
 import { useCan, useUser } from '../user';
 import { SmartPlugsSettings } from './SmartPlugs';
 import { BackupSettings } from './Backups';
+import { ThemePref, useTheme } from '../theme';
 
 export function Settings() {
   const q = useQuery();
   const admin = useCan('admin');
   const tab = q.get('tab') || (admin ? 'general' : 'users');
   const tabs = admin
-    ? [{ id: 'general', label: 'General', icon: 'settings' }, { id: 'users', label: 'Users & roles', icon: 'users' }, { id: 'plugs', label: 'Smart plugs', icon: 'bolt' }, { id: 'backups', label: 'Backups', icon: 'archive' }, { id: 'audit', label: 'Audit log', icon: 'history' }]
-    : [{ id: 'users', label: 'Users & roles', icon: 'users' }];
+    ? [{ id: 'general', label: 'General', icon: 'settings' }, { id: 'users', label: 'Users & roles', icon: 'users' }, { id: 'plugs', label: 'Smart plugs', icon: 'bolt' }, { id: 'backups', label: 'Backups', icon: 'archive' }, { id: 'audit', label: 'Audit log', icon: 'history' }, { id: 'appearance', label: 'Appearance', icon: 'sun' }]
+    : [{ id: 'users', label: 'Users & roles', icon: 'users' }, { id: 'appearance', label: 'Appearance', icon: 'sun' }];
   return (
     <div class="page">
       <PageHeader title="Settings" />
@@ -22,6 +23,35 @@ export function Settings() {
       {tab === 'plugs' && admin && <SmartPlugsSettings />}
       {tab === 'backups' && admin && <BackupSettings />}
       {tab === 'audit' && admin && <Audit />}
+      {tab === 'appearance' && <Appearance />}
+    </div>
+  );
+}
+
+const THEME_CHOICES: { id: ThemePref; label: string }[] = [
+  { id: 'dark', label: 'Dark' },
+  { id: 'light', label: 'Light' },
+  { id: 'system', label: 'System' },
+];
+
+function Appearance() {
+  const { pref, setPref } = useTheme();
+  return (
+    <div class="grid-2">
+      <Card title="Appearance">
+        {/* not <Field>: its <label> wrapper would send clicks on the text to the first button */}
+        <div class="field">
+          <span class="field-label">Theme</span>
+          <div class="seg" role="radiogroup" aria-label="Theme">
+            {THEME_CHOICES.map((c) => (
+              <button key={c.id} type="button" role="radio" aria-checked={pref === c.id} class={pref === c.id ? 'active' : ''} onClick={() => setPref(c.id)}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <span class="field-hint">Saved in this browser. System follows your computer's light or dark setting.</span>
+        </div>
+      </Card>
     </div>
   );
 }

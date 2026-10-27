@@ -24,6 +24,7 @@ import { UserContext } from './user';
 import { native } from './native';
 import { closeAllDeviceTabs, closeDeviceTab, deviceTabHref, moveDeviceTab, useDeviceTabs } from './devtabs';
 import { Logo } from './logo';
+import { useTheme } from './theme';
 
 const nav = [
   { href: '/', label: 'Dashboard', icon: 'dashboard' },
@@ -36,18 +37,6 @@ const nav = [
   { href: '/clients', label: 'Clients', icon: 'building' },
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ];
-
-function useTheme(): [string, () => void] {
-  // dark is the default look; light stays available from the top bar
-  const [theme, setTheme] = useState<string>(document.documentElement.dataset.theme || 'dark');
-  const toggle = () => {
-    const t = theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = t;
-    try { localStorage.setItem('apex-theme', t); } catch {}
-    setTheme(t);
-  };
-  return [theme, toggle];
-}
 
 // Desktop app: show a Windows notification when new alerts come in.
 function useAlertNotifications() {
@@ -75,7 +64,9 @@ function useAlertNotifications() {
 }
 
 function Shell({ user, children, path }: { user: User; children: ComponentChildren; path: string }) {
-  const [theme, toggleTheme] = useTheme();
+  // the top-bar button flips what is on screen to the explicit opposite
+  const { effective: theme, setPref: setTheme } = useTheme();
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
   const [counts, setCounts] = useState<{ alerts: number; tickets: number }>({ alerts: 0, tickets: 0 });
   const [open, setOpen] = useState(false);
   const [company, setCompany] = useState('Apex RMM');
@@ -141,7 +132,7 @@ function Shell({ user, children, path }: { user: User; children: ComponentChildr
 }
 
 function TopBar({ title, user, initials, alerts, theme, onTheme, onMenu, onLogout }: {
-  title: string; user: User; initials: string; alerts: number; theme: string;
+  title: string; user: User; initials: string; alerts: number; theme: 'dark' | 'light';
   onTheme: () => void; onMenu: () => void; onLogout: () => void;
 }) {
   const [menu, setMenu] = useState(false);
